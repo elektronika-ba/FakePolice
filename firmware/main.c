@@ -28,7 +28,10 @@
 // misc
 volatile uint8_t charge_event = 0;
 volatile uint8_t radio_event = 0;
-volatile uint8_t telemetry_event = 0;
+volatile uint8_t rtc_event = 0;
+volatile uint32_t charging_time_sec = 0;
+
+volatile uint32_t telemetry_timer_min = 0;
 
 // rolling code sync value (stored/updated to EEPROM)
 volatile uint16_t kl_counter = 100;
@@ -36,11 +39,37 @@ volatile uint64_t kl_key = SECRET_KEELOQ_KEY;
 
 // ticker timer
 volatile uint64_t delay_milliseconds = 0;
+volatile uint16_t timer0rtc_step = 0;							// for RTC
 
 // RTC
 volatile uint8_t RTC[7] = {22, 6, 9, 12, 0, 0, 5};			// YY MM DD HH MM SS WEEKDAY(1-MON...7-SUN)
 volatile uint8_t bools[BOOL_BANK_SIZE] = { 0, 0 }; 				// 8 global boolean values per BOOL_BANK_SIZE
-volatile uint16_t timer0rtc_step = 0;							// for RTC
+volatile uint8_t rtc_slow_mode = 0;
+volatile uint64_t seconds_counter = 0;
+
+void send_telemetry() {
+	float solar_volt = read_solar_volt();
+	float boost_volt = read_boost_volt();
+	float batt_volt = read_batt_volt();
+	float temperature = read_temperature();
+	uint8_t batt_charging = !(BATT_CHRG_PINREG & _BV(BATT_CHRG_PIN));
+
+	// TODO: pripremi paket i salji
+	// imam 26 bajta ukupno za ovo
+}
+
+void set_rtc_speed(uint8_t slow) {
+	rtc_slow_mode = slow;
+
+	// set prescaller to 128 .. 1second interrupt
+	if(slow) {
+		TCCR2B &= ~(1<<CS10);
+	}
+	// set prescaller 1024 .. 8second interrupt
+	else {
+		TCCR2B |= (1<<CS10);
+	}
+}
 
 float read_temperature() {
 	setHigh(TEMP_SHUT_PORT, TEMP_SHUT_PIN);
@@ -259,15 +288,18 @@ int main(void)
 	TCCR0B = _BV(CS01) | _BV(CS00); // 1:64 prescaled, timer started!
 	TIMSK0 |= _BV(TOIE0); // for ISR(TIMER0_OVF_vect)
 
-	// Initialize Timer2 as async counter @ 1Hz with 32.768kHz crystal
-
-	https://embedds.com/avr-timer2-asynchronous-mode/
-	https://maxembedded.com/2011/06/avr-timers-timer2/
+	// Initialize Timer2 as async RTC counter @ 1Hz with 32.768kHz crystal
+	// https://embedds.com/avr-timer2-asynchronous-mode/
+	// https://maxembedded.com/2011/06/avr-timers-timer2/
 
 	// initialize counter
 	TCNT2 = 0;
-
-	// enable overflow interrupt
+    TCCR2B |= (1<<CS22)|(1<<CS00); // 1 second by default
+    //Enable asynchronous mode
+    ASSR  = (1<<AS2);
+    //wait for registers update
+    // while (ASSR & ((1<<TCN2UB)|(1<<TCR2BUB)));
+    // enable overflow interrupt
 	TIMSK2 |= (1 << TOIE2);
 
 	// Interrupts ON
@@ -276,7 +308,7 @@ int main(void)
 
 	delay_builtin_ms_(50);
 
-	// uint8_t rx_buff[32];
+	uint8_t rx_buff[32];
 
 	// DEBUGGING
 	#ifdef DEBUG
@@ -328,7 +360,6 @@ int main(void)
 		sleep_mode();
 
 		// zzzZZZzzzZZZzzzZZZzzz
-
 		// (some interrupt happens) and we get into the ISR() of it... after it finishes, we continue here:
 
 		// did charge event happen?
@@ -336,10 +367,14 @@ int main(void)
 
 			// charging
 			if( !(BATT_CHRG_PINREG & _BV(BATT_CHRG_PIN)) ) {
+				// ...
 			}
-			// not charging
+			// not charging (anymore)
 			else {
+				charging_time_sec = 0;
 			}
+
+			send_telemetry();
 
 			charge_event = 0;  // handled
 		}
@@ -347,55 +382,7 @@ int main(void)
 		// did radio packet arrive?
 		if(radio_event) {
 
-			// handle radio event
-
-			radio_event = 0; // handled
-		}
-
-		// telemetry timer event?
-		if(telemetry_event) {
-
-			// handle timer event, send telemetry data
-
-			telemetry_event = 0; // handled
-		}
-
-		/*#ifdef DEBUG
-		uint8_t t = (uint8_t)read_temperature();
-
-		uint8_t dec = t / 10;
-		uint8_t jed = t % 10;
-
-		for(uint8_t j=0; j<dec; j++)	{
-			setHigh(LED_RED_PORT, LED_RED_PIN);
-			delay_builtin_ms_(350);
-			setLow(LED_RED_PORT, LED_RED_PIN);
-			delay_builtin_ms_(350);
-		}
-
-		for(uint8_t j=0; j<jed; j++)	{
-			setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
-			delay_builtin_ms_(350);
-			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
-			delay_builtin_ms_(350);
-		}
-
-		if(t == 0) {
-			setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
-			setHigh(LED_RED_PORT, LED_RED_PIN);
-			delay_builtin_ms_(1000);
-			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
-			setLow(LED_RED_PORT, LED_RED_PIN);
-		}
-		#endif*/
-
-		delay_ms_(3000);
-
-		// time to poll nRF for new command?
-		/*if(nrf_poll_tmr_ms == 0) {
-			nrf_poll_tmr_ms = NRF_POLL_TMR_MS;
-
-			// RF packet arrived?
+			// verify that RF packet arrived?
 			if( nrf24l01_irq_rx_dr() )
 			{
 				while( !( nrf24l01_readregister(NRF24L01_REG_FIFO_STATUS) & NRF24L01_REG_RX_EMPTY) )
@@ -406,7 +393,23 @@ int main(void)
 					process_command(rx_buff);
 				}
 			}
-		}*/
+
+			radio_event = 0; // handled
+		}
+
+		// RTC has woken us up?
+		if(rtc_event) {
+
+			// send telemetry if it is time and if solar voltage is good
+			if(!telemetry_timer_min) {
+				if(read_solar_volt() >= LOWEST_SOLVOLT_4_TELEM_MV) {
+					send_telemetry();
+				}
+				telemetry_timer_min = TELEMETRY_MINUTES;
+			}
+
+			rtc_event = 0; // handled
+		}
 
 	}
 
@@ -474,6 +477,113 @@ void delay_builtin_ms_(uint16_t delay_ms) {
 }
 
 //##############################
+// Interrupt: TIMER2 OVERFLOW //
+//##############################
+// This interrupt can happen on every 1s or every 8s
+ISR(TIMER2_OVF_vect, ISR_NOBLOCK)
+{
+	rtc_event = 1;
+
+	uint8_t sec_step = 1;
+
+	// RTC is normal, 1 second interval
+	if(!rtc_slow_mode) {
+
+		// TODO: do something every second?
+	}
+	// RTC advances on each 8 seconds
+	else {
+		sec_step = 8;
+
+		// TODO: do something every 8 seconds?
+	}
+
+	RTC[TIME_S] += sec_step;
+	seconds_counter += sec_step; // seconds ticker, for global use
+
+	// measure charge time
+	if( !(BATT_CHRG_PINREG & _BV(BATT_CHRG_PIN)) ) {
+		charging_time_sec += sec_step;
+	}
+
+	// a minute!
+	if(RTC[TIME_S] >= 60)
+	{
+		// correction if in slow mode
+		if(rtc_slow_mode) {
+			RTC[TIME_S] = RTC[TIME_S] - 60; // keep remainder!
+		}
+		// normal
+		else {
+			RTC[TIME_S] = 0;
+		}
+
+		RTC[TIME_M]++;
+
+		// TODO: do something every minute?
+		if(telemetry_timer_min) telemetry_timer_min--;
+
+	} // if(RTC[TIME_S] >= 60)
+
+	// an hour...
+	if(RTC[TIME_M] >= 60)
+	{
+		RTC[TIME_M] = 0;
+		RTC[TIME_H]++;
+
+		// TODO: do something every hour
+	}
+
+	// a day....
+	if(RTC[TIME_H] >= 24)
+	{
+		RTC[TIME_H] = 0;
+		RTC[DATE_D]++;
+
+		// advance weekday
+		RTC[DATE_W]++;
+		if(RTC[DATE_W] > 7)
+		{
+			RTC[DATE_W] = 1;
+		}
+	}
+
+	// a full month with leap year checking!
+	if(
+		(RTC[DATE_D] > 31)
+		|| (
+			(RTC[DATE_D] == 31)
+			&& (
+				(RTC[DATE_M] == 4)
+				|| (RTC[DATE_M] == 6)
+				|| (RTC[DATE_M] == 9)
+				|| (RTC[DATE_M] == 11)
+				)
+		)
+		|| (
+			(RTC[DATE_D] == 30)
+			&& (RTC[DATE_M] == 2)
+		)
+		|| (
+			(RTC[DATE_D] == 29)
+			&& (RTC[DATE_M] == 2)
+			&& !isleapyear(2000+RTC[DATE_Y])
+		)
+	)
+	{
+		RTC[DATE_D] = 1;
+		RTC[DATE_M]++;
+	}
+
+	// HAPPY NEW YEAR!
+	if(RTC[DATE_M] >= 13)
+	{
+		RTC[DATE_Y]++;
+		RTC[DATE_M] = 1;
+	}
+}
+
+//##############################
 // Interrupt: TIMER0 OVERFLOW //
 //##############################
 // set to overflow at 2.048 milliseconds
@@ -481,83 +591,14 @@ ISR(TIMER0_OVF_vect, ISR_NOBLOCK)
 {
 	if(delay_milliseconds) delay_milliseconds--;	// for the isr based delay
 
-	// every 1000ms increment our internal inaccurate RTC
+	// every 1000ms
 	if( ++timer0rtc_step >= 488 ) // 999,424 ms
 	{
 		timer0rtc_step = 0;
 
-		RTC[TIME_S]++; 												// one second has gone by
+		// do something every ~1ms
 
-		// TODO: do something every second?
-
-		// a minute!
-		if(RTC[TIME_S] >= 60)
-		{
-			RTC[TIME_S] = 0;
-			RTC[TIME_M]++;
-
-			// TODO: do something every minute?
-
-		} // if(RTC[TIME_S] >= 60)
-
-		// an hour...
-		if(RTC[TIME_M] >= 60)
-		{
-			RTC[TIME_M] = 0;
-			RTC[TIME_H]++;
-
-			// TODO: do something every hour
-		}
-
-		// a day....
-		if(RTC[TIME_H] >= 24)
-		{
-			RTC[TIME_H] = 0;
-			RTC[DATE_D]++;
-
-			// advance weekday
-			RTC[DATE_W]++;
-			if(RTC[DATE_W] > 7)
-			{
-				RTC[DATE_W] = 1;
-			}
-		}
-
-		// a full month with leap year checking!
-		if(
-			(RTC[DATE_D] > 31)
-			|| (
-				(RTC[DATE_D] == 31)
-				&& (
-					(RTC[DATE_M] == 4)
-					|| (RTC[DATE_M] == 6)
-					|| (RTC[DATE_M] == 9)
-					|| (RTC[DATE_M] == 11)
-					)
-			)
-			|| (
-				(RTC[DATE_D] == 30)
-				&& (RTC[DATE_M] == 2)
-			)
-			|| (
-				(RTC[DATE_D] == 29)
-				&& (RTC[DATE_M] == 2)
-				&& !isleapyear(2000+RTC[DATE_Y])
-			)
-		)
-		{
-			RTC[DATE_D] = 1;
-			RTC[DATE_M]++;
-		}
-
-		// HAPPY NEW YEAR!
-		if(RTC[DATE_M] >= 13)
-		{
-			RTC[DATE_Y]++;
-			RTC[DATE_M] = 1;
-		}
 	} // if( ++timer0rtc_step >= ? )
-
 }
 
 // Interrupt: pin change interrupt
@@ -582,14 +623,6 @@ ISR(PCINT1_vect, ISR_NOBLOCK) {
 	charge_event = 1;
 
 	PCICR |= _BV(PCIE1); 								// ..re-enable interrupts for the entire section
-}
-
-// Interrupt: Timer2 overflow interrupt
-// This is for telemetry
-ISR(TIMER2_OVF_vect, ISR_NOBLOCK) {
-	sleep_disable();
-
-	telemetry_event = 1;
 }
 
 // calculate if given year is leap year
