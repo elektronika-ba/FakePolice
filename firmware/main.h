@@ -22,25 +22,28 @@
 	#define _BV(n) (1 << n)
 #endif
 
-#define	calc_UBRR(bau)			(F_CPU/16/bau-1)
-#define calc_TWI(khz)			(((F_CPU/khz) - 16)/2)
-
 #define nop() asm volatile("nop")
 
-#define	DEFAULT_RF_CHANNEL		14		// this is system's default RF channel
+#define	calc_UBRR(bau)				(F_CPU/16/bau-1)
+#define calc_TWI(khz)				(((F_CPU/khz) - 16)/2)
 
-#define LOWEST_SOLVOLT_4_TELEM_MV	3500	// mV required at solar panel in order to send the timed-telemetry
+#define	DEFAULT_RF_CHANNEL			14		// this is system's default RF channel
+
+#define LOWEST_SOLVOLT_GOOD			3000	// mV required at solar panel in order to send the timed-telemetry
 #define LOWEST_BATT_VOLT_MV			3600	// mV lowest battery voltage allowed for blinking the LEDs. below this voltage telemetry stops and device will not blink LEDs anymore
 
-#define TELEMETRY_MINUTES		30		// on every X minutes send telemetry data to "home"
+#define POLICE_LIGHTS_STAGE_COUNT	5		// how many times should one color blink before switching to other color
+#define POLICE_LIGHTS_STAGE_ON_8MS	4		// delay&on-time between blinks/toggles of the LED ... in 8ms steps!!!
+
+#define TELEMETRY_MINUTES			30		// on every X minutes send telemetry data to "home"
 
 // RF Commands (just random values known to both sides)
-#define RF_CMD_ABORT			0x2496	// aborts current command
-#define RF_CMD_POLICE			0x7683	// police lights
-#define RF_CMD_CAMERA			0x5628	// speed camera flash
-#define RF_CMD_SETRTC			0x5519	// set RTC
-#define RF_CMD_GETTELE			0x6087	// request for telemetry data
-#define RF_CMD_TELEDATA			0x7806	// telemetry data packet
+#define RF_CMD_ABORT				0x2496	// aborts current command
+#define RF_CMD_POLICE				0x7683	// police lights
+#define RF_CMD_CAMERA				0x5628	// speed camera flash
+#define RF_CMD_SETRTC				0x5519	// set RTC
+#define RF_CMD_GETTELE				0x6087	// request for telemetry data
+#define RF_CMD_TELEDATA				0x7806	// telemetry data packet (we send this)
 
 // ADC pins
 

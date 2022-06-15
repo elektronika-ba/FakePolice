@@ -30,16 +30,23 @@ volatile uint8_t charge_event = 0;
 volatile uint8_t radio_event = 0;
 volatile uint8_t rtc_event = 0;
 volatile uint32_t charging_time_sec = 0;
+volatile uint8_t rtc_ok = 0; // set to 1 when we receive SETRTC command and process it
+
+volatile uint8_t hacking_attempts_cnt = 0;
+
+// police light blinker
+volatile uint8_t police_lights_count = 0;
+volatile uint8_t police_lights_stage = 0; // red/blue
+volatile uint8_t police_lights_stage_counter = 0; // counting pulsing of red/blue leds
+volatile uint16_t police_lights_stage_on_timer = 0; // timer for tiggle-time of the LED itself
+volatile uint8_t police_lights_busy = 0;
 
 volatile uint32_t telemetry_timer_min = 0;
 
 // rolling code sync value (stored/updated to EEPROM)
-volatile uint16_t kl_counter = 100;
+volatile uint16_t kl_rx_counter = 100;
+volatile uint16_t kl_tx_counter = 1000;
 volatile uint64_t kl_key = SECRET_KEELOQ_KEY;
-
-// ticker timer
-volatile uint64_t delay_milliseconds = 0;
-volatile uint16_t timer0rtc_step = 0;							// for RTC
 
 // RTC
 volatile uint8_t RTC[7] = {22, 6, 9, 12, 0, 0, 5};			// YY MM DD HH MM SS WEEKDAY(1-MON...7-SUN)
@@ -54,8 +61,14 @@ void send_telemetry() {
 	float temperature = read_temperature();
 	uint8_t batt_charging = !(BATT_CHRG_PINREG & _BV(BATT_CHRG_PIN));
 
+	// salji i ovo:
+	// hacking_attempts_cnt
+	// charging_time_sec
+
 	// TODO: pripremi paket i salji
 	// imam 26 bajta ukupno za ovo
+
+	hacking_attempts_cnt = 0; // we can clear this one now
 }
 
 void set_rtc_speed(uint8_t slow) {
@@ -95,10 +108,33 @@ float read_batt_volt() {
 	return read_adc_mv(BATT_VOLT_ADMUX_VAL, 47000, 100000, 16);
 }
 
+// stop police lights in ISR (if currently running)
+void police_off() {
+	while(police_lights_busy); // wait until ISR finishes (possibly)
+
+	police_lights_count = 0; // end it
+}
+
+// start police lights in ISR for N times
+void police_on(uint8_t times) {
+	police_off();
+
+	police_lights_stage = 0;
+	police_lights_stage_on_timer = 0;
+	police_lights_stage_counter = POLICE_LIGHTS_STAGE_COUNT;
+
+	police_lights_count = times; // start it
+}
+
+uint8_t send_command(uint16_t command, uint8_t *param) {
+	// todo
+	// kl_tx_counter
+}
+
 void process_command(uint8_t *rx_buff) {
-/*
 	// 32bytes maximum{[ROLLING ACCESS CODE 4 bytes][COMMAND 2 bytes][PARAM N bytes]}
 	// COMMAND+Counter is also contained within the ROLLING ACCESS CODE
+	// ROLLING ACCESS CODE 4 bytes IS: [COUNTER MSB][COUNTER LSB][COMMAND MSB][COMMAND LSB]
 
 	// decrypt access code
 	uint32_t encrypted = 0;
@@ -109,118 +145,75 @@ void process_command(uint8_t *rx_buff) {
 
 	keeloq_decrypt(&encrypted, (uint64_t *)&kl_key);
 
-	// it is now decrypted. we need to verify whether this is a valid data or not.
+	// variable "encrypted" is now "decrypted". we need to verify whether this is a valid data or not.
 	// there is no MAC, so we treat entire data as MAC. encryption here does not
 	// provide secrecy but only message authenticity. that's all we care about really.
 
-	// verify message authenticity
+	// extract command from the encrypted portion
+	uint16_t dec_command = 0;
+	dec_command |= encrypted & 0xFF00;
+	dec_command |= (uint8_t)encrypted;
+
+	// extract sync rx_counter from the encrypted portion
+	uint16_t enc_rx_counter = 0;
+	enc_rx_counter |= encrypted >> 16 & 0xFF00;
+	enc_rx_counter |= (uint8_t)encrypted >> 24;
+
+	// extract command from non-encrypted (plaintext) portion
+	uint16_t raw_command = 0;
+	raw_command |= rx_buff[4] << 8;
+	raw_command |= rx_buff[5];
+
+	// verify message authenticity:
+	// 1. sequence must be within the window
+	// 2. encrypted and raw commands must match
 	if(
-		next_within_window(100, 100, 32)
-		// &&
+		next_within_window(enc_rx_counter, kl_rx_counter, 32)
+		&& dec_command == raw_command
 	)
 	{
+		kl_rx_counter = enc_rx_counter + 1; // keep track of the sync counter
 
-	}
+		// OK to process further...
 
-	uint8_t cmd_count = rx_buff[0];
+		// optional parameter pointer
+		uint8_t *param = rx_buff + 6; // processed 6 bytes so far, we are left with 32-6 = 26 for the parameter. 32 because nRF24L01 packet is 32 bytes long max.
 
-	while(cmd_count-- > 0) {
-		uint8_t *cmd = rx_buff + cmd_index;
-		cmd_index++; // move away from the command as we read it
-		uint8_t *param = rx_buff + cmd_index; // this is where the optional parameter starts
-
-		switch(*cmd) {
-			case RF_CMD_SEGMENT_SET_VALUE:
-				SEGMENT_display_number(&segment_ctx, (uint32_t)((uint8_t)(*param)));
-				cmd_index += 1; // param was 1 byte
+		switch(dec_command) {
+			case RF_CMD_ABORT:
+				police_off();
 			break;
-			case RF_CMD_SEGMENT_SET_IDLE:
-				SEGMENT_display_idle(&segment_ctx);
+
+			case RF_CMD_POLICE:
+				uint8_t times = param[0];
+				police_on(times);
 			break;
-			case RF_CMD_SEGMENT_SET_ZEROS:
-				SEGMENT_display_zeros(&segment_ctx);
+
+			case RF_CMD_CAMERA:
+				speed_camera();
 			break;
-			case RF_CMD_SEGMENT_CLEAR:
-				SEGMENT_display_clear(&segment_ctx);
+
+			case RF_CMD_SETRTC:
+				// extract RTC from param
+
+				// todo...
+				// parse param
+
+				rtc_ok = 1;
 			break;
-			case RF_CMD_SET_PROGRESSBAR_VAL:
-			{
-				uint8_t red = *param;
-				param++;
-				uint8_t green = *param;
-				param++;
-				uint8_t blue = *param;
-				param++;
-				uint8_t value = *param;
 
-				// stupid failsafe
-				if(value > 10) value = 10;
-
-				showProgress(red, green, blue, value);
-
-				cmd_index += 4; // param was 4 bytes
-			}
+			case RF_CMD_GETTELE:
+				send_telemetry();
 			break;
-			case RF_CMD_SEGMENT_ANIMATE:
-			{
-				uint16_t delay = 0;
-				memcpy(&delay, param, 2);
-				param+=2; // skip the "delay" param, goto "times" param
 
-				uint8_t times = *param;
-				param+=1; // skip the "times" param, goto "type" param
-
-				uint8_t type = *param;
-
-				while(times-- > 0) {
-					if(type == 0)
-						SEGMENT_animate1(&segment_ctx, delay);
-					else
-						SEGMENT_animate2(&segment_ctx, delay);
-				}
-
-				cmd_index += 4; // param was 4 bytes
-			}
-			break;
-			case RF_CMD_SET_OPTOOUTPUT:
-			{
-				uint8_t state = *param;
-				if(state) {
-					OUT_PORT |= _BV(OUT_PIN); // turn it on
-				}
-				else {
-					OUT_PORT &= ~_BV(OUT_PIN); // turn it off
-				}
-
-				cmd_index += 1; // param was 1 byte
-			}
-			break;
-			case RF_CMD_PULSE_OPTOOUTPUT:
-			{
-				uint8_t delay = *param;
-				while(delay-- > 0) {
-					_delay_ms(100);
-				}
-
-				cmd_index += 1; // param was 1 byte
-			}
-			break;
-			case RF_CMD_GET_OPTOINPUT:
-			{
-				uint8_t state = 0;
-				if( !(BTNB_PINREG & _BV(BTNB_PIN)) )
-				{
-					state = 1;
-				}
-				// salji stanje na RPi
-				// TODO send RX packet
-			}
-			break;
 			default:
-				return; // samo obustavi
+				// wtf
 		}
 	}
-	*/
+	else {
+		hacking_attempts_cnt++;
+	}
+
 }
 
 // simulates the speed camera flash
@@ -241,20 +234,20 @@ void speed_camera() {
 	}
 }
 
-// simulates police lights
+// simulates police lights without ISR usage
 void police_once() {
-	for(uint8_t j=0; j<5; j++)	{
+	for(uint8_t j=0; j<POLICE_LIGHTS_STAGE_COUNT; j++)	{
 		setHigh(LED_RED_PORT, LED_RED_PIN);
-		delay_builtin_ms_(30);
+		delay_builtin_ms_(POLICE_LIGHTS_STAGE_ON_MS);
 		setLow(LED_RED_PORT, LED_RED_PIN);
-		delay_builtin_ms_(30);
+		delay_builtin_ms_(POLICE_LIGHTS_STAGE_ON_MS);
 	}
 
-	for(uint8_t j=0; j<5; j++)	{
+	for(uint8_t j=0; j<POLICE_LIGHTS_STAGE_COUNT; j++)	{
 		setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
-		delay_builtin_ms_(30);
+		delay_builtin_ms_(POLICE_LIGHTS_STAGE_ON_MS);
 		setLow(LED_BLUE_PORT, LED_BLUE_PIN);
-		delay_builtin_ms_(30);
+		delay_builtin_ms_(POLICE_LIGHTS_STAGE_ON_MS);
 	}
 }
 
@@ -283,16 +276,12 @@ int main(void)
 	nrf24l01_setrxaddr0(my_rx_addr);
 	nrf24l01_setRX();
 
-	// Initialize Timer0 overflow ISR for 1ms interval
+	// Initialize Timer0 overflow ISR for 8.192ms interval, no need to go faster
 	TCCR0A = 0;
-	TCCR0B = _BV(CS01) | _BV(CS00); // 1:64 prescaled, timer started!
+	TCCR0B = _BV(CS12); // 1:256 prescaled, timer started!
 	TIMSK0 |= _BV(TOIE0); // for ISR(TIMER0_OVF_vect)
 
 	// Initialize Timer2 as async RTC counter @ 1Hz with 32.768kHz crystal
-	// https://embedds.com/avr-timer2-asynchronous-mode/
-	// https://maxembedded.com/2011/06/avr-timers-timer2/
-
-	// initialize counter
 	TCNT2 = 0;
     TCCR2B |= (1<<CS22)|(1<<CS00); // 1 second by default
     //Enable asynchronous mode
@@ -303,7 +292,6 @@ int main(void)
 	TIMSK2 |= (1 << TOIE2);
 
 	// Interrupts ON
-	// Note: global interrupts should NOT be disabled, everything is relying on them from now on!
 	sei();
 
 	delay_builtin_ms_(50);
@@ -312,24 +300,7 @@ int main(void)
 
 	// DEBUGGING
 	#ifdef DEBUG
-	for(uint8_t i=0; i<2; i++)	{
-
-		for(uint8_t j=0; j<5; j++)	{
-			setHigh(LED_RED_PORT, LED_RED_PIN);
-			delay_builtin_ms_(30);
-			setLow(LED_RED_PORT, LED_RED_PIN);
-			delay_builtin_ms_(30);
-		}
-
-		for(uint8_t j=0; j<5; j++)	{
-			setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
-			delay_builtin_ms_(30);
-			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
-			delay_builtin_ms_(30);
-		}
-	}
-	setLow(LED_BLUE_PORT, LED_BLUE_PIN);
-	setLow(LED_RED_PORT, LED_RED_PIN);
+	police_once();
 	#endif
 
 	// main program
@@ -337,9 +308,9 @@ int main(void)
 		/*
 		1. configure sleep mode
 		// we can be woken up by:
-		- Timer2
-		- IRQ from nRF radio
 		- Battery charge indicator
+		- IRQ from nRF radio
+		- Timer2
 
 		2. sleep
 
@@ -353,13 +324,21 @@ int main(void)
 		- IRQ from nRF radio = process command and go back to 1.
 		*/
 
-		// configure sleep mode
-		set_sleep_mode(SLEEP_MODE_PWR_SAVE);
+		// OK to sleep?
+		if(!police_lights_count) {
+			// make sure these are OFF during sleep so that we don't end up dead
+			setLow(LED_RED_PORT, LED_RED_PIN);
+			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
 
-		// go to sleep
-		sleep_mode();
+			// configure sleep mode
+			set_sleep_mode(SLEEP_MODE_PWR_SAVE);
 
-		// zzzZZZzzzZZZzzzZZZzzz
+			// go to sleep
+			sleep_mode();
+
+			// zzzZZZzzzZZZzzzZZZzzz
+		}
+
 		// (some interrupt happens) and we get into the ISR() of it... after it finishes, we continue here:
 
 		// did charge event happen?
@@ -367,7 +346,7 @@ int main(void)
 
 			// charging
 			if( !(BATT_CHRG_PINREG & _BV(BATT_CHRG_PIN)) ) {
-				// ...
+				// nothing (yet)
 			}
 			// not charging (anymore)
 			else {
@@ -382,7 +361,7 @@ int main(void)
 		// did radio packet arrive?
 		if(radio_event) {
 
-			// verify that RF packet arrived?
+			// verify that RF packet arrived and process it
 			if( nrf24l01_irq_rx_dr() )
 			{
 				while( !( nrf24l01_readregister(NRF24L01_REG_FIFO_STATUS) & NRF24L01_REG_RX_EMPTY) )
@@ -397,19 +376,22 @@ int main(void)
 			radio_event = 0; // handled
 		}
 
-		// RTC has woken us up?
+		// RTC has woken us up? every 1 or 8 seconds depending on situation
 		if(rtc_event) {
 
 			// send telemetry if it is time and if solar voltage is good
 			if(!telemetry_timer_min) {
-				if(read_solar_volt() >= LOWEST_SOLVOLT_4_TELEM_MV) {
+				if(read_solar_volt() >= LOWEST_SOLVOLT_GOOD) {
 					send_telemetry();
 				}
-				telemetry_timer_min = TELEMETRY_MINUTES;
+				telemetry_timer_min = TELEMETRY_MINUTES; // reload for next time
 			}
 
 			rtc_event = 0; // handled
 		}
+
+		// whatever wakes us up, we can tweak our RTC period (but every 5min)
+		// hm...
 
 	}
 
@@ -459,14 +441,6 @@ void misc_hw_init() {
 	// Temperature voltage/value
 	setInput(TEMP_C_DDR, TEMP_C_PIN);
 	TEMP_C_DIDR |= TEMP_C_DIDR_VAL;
-}
-
-// interrupt based delay function
-void delay_ms_(uint64_t ms) {
-	delay_milliseconds = ms/2;
-
-	// waiting until the end...
-	while(delay_milliseconds > 0);
 }
 
 // built-in delay wrapper
@@ -586,19 +560,60 @@ ISR(TIMER2_OVF_vect, ISR_NOBLOCK)
 //##############################
 // Interrupt: TIMER0 OVERFLOW //
 //##############################
-// set to overflow at 2.048 milliseconds
+// set to overflow at 8.192ms milliseconds
 ISR(TIMER0_OVF_vect, ISR_NOBLOCK)
 {
-	if(delay_milliseconds) delay_milliseconds--;	// for the isr based delay
+	police_lights_busy = 1; // for sync
 
-	// every 1000ms
-	if( ++timer0rtc_step >= 488 ) // 999,424 ms
-	{
-		timer0rtc_step = 0;
+	// blinker ON?
+	if(police_lights_count) {
 
-		// do something every ~1ms
+		// time to toggle the pin?
+		// nope
+		if(police_lights_stage_on_timer) {
+			police_lights_stage_on_timer--;
+		}
+		// yep
+		else {
+			// time to change the stage?
+			// nope
+			if(police_lights_stage_counter) {
+				police_lights_stage_counter--;
+			}
+			// yep
+			else {
+				// completed one full blink (both stages blinked at least once)
+				if(police_lights_stage) {
+					police_lights_count--; // full sequence (RED+BLUE) completed
+				}
 
-	} // if( ++timer0rtc_step >= ? )
+				police_lights_stage = !police_lights_stage; // change it
+				police_lights_stage_counter = POLICE_LIGHTS_STAGE_COUNT; // reload counter
+			}
+
+			// toggle the pin according to the current stage, if there is more to do
+			if(police_lights_count) {
+				if(police_lights_stage) {
+					setLow(LED_BLUE_PORT, LED_BLUE_PIN); // keep this one off
+					togglePin(LED_RED_PORT, LED_RED_PIN); // blink this one
+				}
+				else {
+					setLow(LED_RED_PORT, LED_RED_PIN); // keep this one off
+					togglePin(LED_BLUE_PORT, LED_BLUE_PIN); // blink this one
+				}
+
+				police_lights_stage_on_timer = POLICE_LIGHTS_STAGE_ON_8MS; // reload timer
+			}
+			// this was the last pass? - turn them off finally
+			else {
+				setLow(LED_RED_PORT, LED_RED_PIN);
+				setLow(LED_BLUE_PORT, LED_BLUE_PIN);
+			}
+		}
+
+	}
+
+	police_lights_busy = 0; // for sync
 }
 
 // Interrupt: pin change interrupt
