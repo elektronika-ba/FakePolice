@@ -56,10 +56,10 @@ volatile uint64_t seconds_counter = 0;
 volatile uint8_t rtc_busy = 0;
 
 void send_telemetry() {
-	float solar_volt = read_solar_volt();
-	float boost_volt = read_boost_volt();
-	float batt_volt = read_batt_volt();
-	float temperature = read_temperature();
+	double solar_volt = read_solar_volt();
+	double boost_volt = read_boost_volt();
+	double batt_volt = read_batt_volt();
+	double temperature = read_temperature();
 
 	// salji i ovo:
 	// hacking_attempts_cnt
@@ -78,14 +78,13 @@ void send_telemetry() {
 	uint8_t charging_or_not = 'N';
 	if(!(BATT_CHRG_PINREG & _BV(BATT_CHRG_PIN))) charging_or_not = 'C';
 
-	if(hacking_attempts_cnt > 999) hacking_attempts_cnt = 999;
 	uint16_t charging_time_min = charging_time_sec % 60;
 	if(charging_time_min > 999) charging_time_min = 999;
 
 	uint8_t param[26];
-	sprintf(param, "%c#%.1f#%.1f#%.1f#.0f#$", charging_or_not, solar_volt, boost_volt, batt_volt, temperature, hacking_attempts_cnt, charging_time_min);
+	sprintf((char *)param, "%c#%.1f#%.1f#%.1f#%.0f#%d#%d#$", charging_or_not, solar_volt, boost_volt, batt_volt, temperature, hacking_attempts_cnt, charging_time_min);
 
-	send_command(RF_CMD_TELEDATA, param);
+	send_command(RF_CMD_TELEDATA, param, 32);
 
 	hacking_attempts_cnt = 0; // we can clear this one now
 }
@@ -93,21 +92,21 @@ void send_telemetry() {
 void set_rtc_speed(uint8_t slow) {
 	rtc_slow_mode = slow;
 
-	// set prescaller to 128 .. 1second interrupt
-	if(slow) {
-		TCCR2B &= ~(1<<CS10);
-	}
 	// set prescaller 1024 .. 8second interrupt
+	if(slow) {
+		TCCR2B |= (1<<CS21);
+	}
+	// set prescaller to 128 .. 1second interrupt
 	else {
-		TCCR2B |= (1<<CS10);
+		TCCR2B &= ~(1<<CS21);
 	}
 }
 
-float read_temperature() {
+double read_temperature() {
 	setHigh(TEMP_SHUT_PORT, TEMP_SHUT_PIN);
-	delay_ms_(5);
+	delay_builtin_ms_(5);
 
-	float adc = read_adc_mv(TEMP_C_ADMUX_VAL, 0, 0, 16);
+	double adc = read_adc_mv(TEMP_C_ADMUX_VAL, 0, 0, 16);
 
 	setLow(TEMP_SHUT_PORT, TEMP_SHUT_PIN);
 
@@ -115,15 +114,15 @@ float read_temperature() {
 	return (adc - 100) / 10 - 40;
 }
 
-float read_solar_volt() {
+double read_solar_volt() {
 	return read_adc_mv(SOL_VOLT_ADMUX_VAL, 47000, 47000, 16);
 }
 
-float read_boost_volt() {
+double read_boost_volt() {
 	return read_adc_mv(BOOST_VOLT_ADMUX_VAL, 47000, 47000, 16);
 }
 
-float read_batt_volt() {
+double read_batt_volt() {
 	return read_adc_mv(BATT_VOLT_ADMUX_VAL, 47000, 100000, 16);
 }
 
@@ -148,7 +147,7 @@ void police_on(uint8_t times) {
 void send_command(uint16_t command, uint8_t *param, uint8_t param_len) {
 	// build access code
 	uint32_t decrypted = kl_tx_counter; // add counter to lower 2 bytes
-	decrypted |= command << 16; // add command to upper 2 bytes
+	decrypted |= ((uint32_t)command) << 16; // add command to upper 2 bytes
 
 	// encrypt it
 	keeloq_encrypt(&decrypted, (uint64_t *)&kl_master_crypt_key);
@@ -231,8 +230,10 @@ void process_command(uint8_t *rx_buff) {
 			break;
 
 			case RF_CMD_POLICE:
+			{
 				uint8_t times = param[0];
 				police_on(times);
+			}
 			break;
 
 			case RF_CMD_CAMERA:
@@ -240,6 +241,7 @@ void process_command(uint8_t *rx_buff) {
 			break;
 
 			case RF_CMD_SETRTC:
+			{
 				while(rtc_busy); // sync
 
 				TCCR2B = 0; // pause RTC...
@@ -250,13 +252,16 @@ void process_command(uint8_t *rx_buff) {
 				set_rtc_speed(rtc_slow_mode); // resume RTC
 
 				rtc_ok = 1;
+			}
 			break;
 
 			case RF_CMD_NEWKEY:
+			{
 				// get new key from param 8 bytes - mind the byteorder
-				memcpy(&kl_master_crypt_key, param, 8);
+				memcpy((uint8_t *)&kl_master_crypt_key, &param, 8);
 
 				update_kl_settings_to_eeprom();
+			}
 			break;
 
 			case RF_CMD_GETTELE:
@@ -264,7 +269,9 @@ void process_command(uint8_t *rx_buff) {
 			break;
 
 			default:
+			{
 				// wtf
+			}
 		}
 	}
 	else {
@@ -274,7 +281,7 @@ void process_command(uint8_t *rx_buff) {
 }
 
 // simulates the speed camera flash
-void speed_camera() {
+void speed_camera()	 {
 	for(uint8_t j=0; j<2; j++)	{
 		setHigh(LED_RED_PORT, LED_RED_PIN);
 		delay_builtin_ms_(60);
@@ -292,19 +299,21 @@ void speed_camera() {
 }
 
 // simulates police lights without ISR usage
-void police_once() {
-	for(uint8_t j=0; j<POLICE_LIGHTS_STAGE_COUNT; j++)	{
-		setHigh(LED_RED_PORT, LED_RED_PIN);
-		delay_builtin_ms_(POLICE_LIGHTS_STAGE_ON_MS);
-		setLow(LED_RED_PORT, LED_RED_PIN);
-		delay_builtin_ms_(POLICE_LIGHTS_STAGE_ON_MS);
-	}
+void police_inline(uint8_t times) {
+	for(uint8_t i=0; i<times; i++) {
+		for(uint8_t j=0; j<POLICE_LIGHTS_STAGE_COUNT; j++)	{
+			setHigh(LED_RED_PORT, LED_RED_PIN);
+			delay_builtin_ms_(POLICE_LIGHTS_STAGE_ON_8MS*8);
+			setLow(LED_RED_PORT, LED_RED_PIN);
+			delay_builtin_ms_(POLICE_LIGHTS_STAGE_ON_8MS*8);
+		}
 
-	for(uint8_t j=0; j<POLICE_LIGHTS_STAGE_COUNT; j++)	{
-		setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
-		delay_builtin_ms_(POLICE_LIGHTS_STAGE_ON_MS);
-		setLow(LED_BLUE_PORT, LED_BLUE_PIN);
-		delay_builtin_ms_(POLICE_LIGHTS_STAGE_ON_MS);
+		for(uint8_t j=0; j<POLICE_LIGHTS_STAGE_COUNT; j++)	{
+			setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
+			delay_builtin_ms_(POLICE_LIGHTS_STAGE_ON_8MS*8);
+			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
+			delay_builtin_ms_(POLICE_LIGHTS_STAGE_ON_8MS*8);
+		}
 	}
 }
 
@@ -312,8 +321,8 @@ void update_kl_settings_to_eeprom() {
 	// save all working stuff to eeprom, and mark if VALID
 
 	// COUNTERS
-	eeprom_update_word((uint8_t *)EEPROM_TX_COUNTER, kl_tx_counter);
-	eeprom_update_word((uint8_t *)EEPROM_RX_COUNTER, kl_rx_counter);
+	eeprom_update_word((uint16_t *)EEPROM_TX_COUNTER, kl_tx_counter);
+	eeprom_update_word((uint16_t *)EEPROM_RX_COUNTER, kl_rx_counter);
 
 	// MASTER CRYPT-KEY
 	eeprom_update_block((uint64_t *)&kl_master_crypt_key, (uint8_t *)EEPROM_MASTER_CRYPT_KEY, 8);
@@ -337,18 +346,12 @@ int main(void)
 	// eeprom has some settings?
     if( eeprom_read_byte((uint8_t *)EEPROM_MAGIC) == EEPROM_MAGIC_VALUE) {
 		eeprom_read_block((uint64_t *)&kl_master_crypt_key, (uint8_t *)EEPROM_MASTER_CRYPT_KEY, 8);
-		kl_rx_counter = eeprom_read_word((uint8_t *)EEPROM_RX_COUNTER);
-		kl_tx_counter = eeprom_read_word((uint8_t *)EEPROM_TX_COUNTER);
+		kl_rx_counter = eeprom_read_word((uint16_t *)EEPROM_RX_COUNTER);
+		kl_tx_counter = eeprom_read_word((uint16_t *)EEPROM_TX_COUNTER);
 	}
 	// nope, use defaults
 	else {
-		setHigh(LED_RED_PORT, LED_RED_PIN);
-		setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
-		delay_builtin_ms_(100);
-		setLow(LED_RED_PORT, LED_RED_PIN);
-		setLow(LED_BLUE_PORT, LED_BLUE_PIN);
-
-		master_crypt_key = DEFAULT_KEELOQ_CRYPT_KEY;
+		kl_master_crypt_key = DEFAULT_KEELOQ_CRYPT_KEY;
 		kl_rx_counter = DEFAULT_KEELOQ_COUNTER;
 		kl_tx_counter = DEFAULT_KEELOQ_COUNTER;
 
@@ -394,8 +397,14 @@ int main(void)
 
 	// DEBUGGING
 	#ifdef DEBUG
-	police_once();
+	//police_inline(2);
+	//delay_builtin_ms_(300);
+	speed_camera();
 	#endif
+
+	// I figured that there is no point in waking up every 1s
+	// so I am fixing it to 8 sec wakeup interval
+	set_rtc_speed(1); // 8-sec RTC
 
 	// main program
 	while(1) {
@@ -424,13 +433,25 @@ int main(void)
 			setLow(LED_RED_PORT, LED_RED_PIN);
 			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
 
+			#ifdef DEBUG
+			setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
+			delay_builtin_ms_(60);
+			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
+			#endif
+
 			// configure sleep mode
 			set_sleep_mode(SLEEP_MODE_PWR_SAVE);
 
 			// go to sleep
-			sleep_mode();
-
-			// zzzZZZzzzZZZzzzZZZzzz
+			sleep_mode(); // zzzZZZzzzZZZzzzZZZzzz
+			
+			// WOKEN UP!
+			
+			#ifdef DEBUG
+			setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
+			delay_builtin_ms_(60);
+			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
+			#endif
 		}
 
 		// (some interrupt happens) and we get into the ISR() of it... after it finishes, we continue here:
@@ -440,7 +461,7 @@ int main(void)
 
 			// charging
 			if( !(BATT_CHRG_PINREG & _BV(BATT_CHRG_PIN)) ) {
-				set_rtc_speed(0); // 1-sec RTC
+				//set_rtc_speed(0); // 1-sec RTC
 			}
 			// not charging (anymore)
 			else {
@@ -455,6 +476,14 @@ int main(void)
 		// did radio packet arrive?
 		if(radio_event) {
 
+			/*setHigh(LED_RED_PORT, LED_RED_PIN);
+			delay_builtin_ms_(60);
+			setLow(LED_RED_PORT, LED_RED_PIN);*/
+
+			// bajgi procitali RF paket, i palimo police lights
+			police_on(10);
+
+			/*
 			// verify that RF packet arrived and process it
 			if( nrf24l01_irq_rx_dr() )
 			{
@@ -466,6 +495,7 @@ int main(void)
 					process_command(rx_buff);
 				}
 			}
+			*/
 
 			radio_event = 0; // handled
 		}
@@ -473,14 +503,18 @@ int main(void)
 		// RTC has woken us up? every 1 or 8 seconds depending on situation
 		if(rtc_event) {
 
+			/*setHigh(LED_RED_PORT, LED_RED_PIN);
+			delay_builtin_ms_(60);
+			setLow(LED_RED_PORT, LED_RED_PIN);*/
+
 			// send telemetry if it is time and if solar voltage is good
 			if(!telemetry_timer_min) {
 				if(read_solar_volt() >= LOWEST_SOLVOLT_GOOD) {
 					send_telemetry();
-					set_rtc_speed(0); // 1-sec RTC
+					//set_rtc_speed(0); // 1-sec RTC
 				}
 				else {
-					set_rtc_speed(1); // 8-sec RTC
+					//set_rtc_speed(1); // 8-sec RTC
 				}
 				telemetry_timer_min = TELEMETRY_MINUTES; // reload for next time
 			}
@@ -722,7 +756,10 @@ ISR(PCINT0_vect, ISR_NOBLOCK) {
 
 	PCICR &= ~_BV(PCIE0); 								// ..disable interrupts for the entire section
 
-	radio_event = 1;
+	// event is only on LOW pulse
+	if( !(nrf24l01_IRQ_PINREG & _BV(nrf24l01_IRQ_PIN)) ) {
+		radio_event = 1;
+	}
 
 	PCICR |= _BV(PCIE0); 								// ..re-enable interrupts for the entire section
 }
@@ -746,7 +783,7 @@ uint8_t isleapyear(uint16_t y)
 }
 
 // reads average ADC value
-float read_adc_mv(uint8_t admux_val, uint32_t Rup, uint32_t Rdn, uint8_t how_many)
+double read_adc_mv(uint8_t admux_val, uint32_t Rup, uint32_t Rdn, uint8_t how_many)
 {
 	uint64_t volt_sum = 0;
 
@@ -776,7 +813,7 @@ float read_adc_mv(uint8_t admux_val, uint32_t Rup, uint32_t Rdn, uint8_t how_man
 	volt_sum /= how_many;
 
 	// convert from 0..1023 to 0..Vref
-	float adc_voltage = (4962.0f / 1024.0f) * (float)volt_sum;
+	double adc_voltage = (4962.0f / 1024.0f) * (double)volt_sum;
 
 	// no voltage divider connected
 	if(Rup == 0 && Rdn == 0) {

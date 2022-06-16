@@ -44,7 +44,7 @@
 #define LOWEST_BATT_VOLT_MV			3600	// mV lowest battery voltage allowed for blinking the LEDs. below this voltage telemetry stops and device will not blink LEDs anymore
 
 #define POLICE_LIGHTS_STAGE_COUNT	5		// how many times should one color blink before switching to other color
-#define POLICE_LIGHTS_STAGE_ON_8MS	4		// delay&on-time between blinks/toggles of the LED ... in 8ms steps!!!
+#define POLICE_LIGHTS_STAGE_ON_8MS	5		// delay&on-time between blinks/toggles of the LED ... in 8ms steps!!!
 
 #define TELEMETRY_MINUTES			30		// on every X minutes send telemetry data to "home"
 
@@ -119,7 +119,8 @@
 #define nrf24l01_IRQ_DDR		DDRB
 #define nrf24l01_IRQ_PORT		PORTB
 #define nrf24l01_IRQ_PIN		1
-#define	nrf24l01_IRQ_PCINTBIT	PCINT5
+#define	nrf24l01_IRQ_PINREG		PINB
+#define	nrf24l01_IRQ_PCINTBIT	PCINT1
 #define	nrf24l01_IRQ_PCMSKREG	PCMSK0
 #define	nrf24l01_IRQ_PCICRBIT	PCIE0
 
@@ -155,14 +156,25 @@
 #define	TIME_S					5		// for the RTC[] array
 #define DATE_W					6		// for the RTC[] array
 
-// misc stuff
+// functions
 extern void misc_hw_init();
-extern void delay_ms_(uint64_t);
 extern void delay_builtin_ms_(uint16_t);
 extern uint8_t isleapyear(uint16_t); // calculate if given year is leap year
-
-// main app stuff
 extern uint8_t next_within_window(uint16_t, uint16_t, uint16_t);
-float read_adc_mv(uint8_t admux_val, uint32_t Rup, uint32_t Rdn, uint8_t how_many);
+extern double read_adc_mv(uint8_t admux_val, uint32_t Rup, uint32_t Rdn, uint8_t how_many);
+extern void send_telemetry();
+extern void set_rtc_speed(uint8_t slow);
+extern double read_temperature();
+extern double read_solar_volt();
+extern double read_boost_volt();
+extern double read_batt_volt();
+extern void police_off();
+extern void police_on(uint8_t times);
+extern void send_command(uint16_t command, uint8_t *param, uint8_t param_len);
+extern void process_command(uint8_t *rx_buff);
+extern void speed_camera();
+extern void police_inline(uint8_t times);
+extern void update_kl_settings_to_eeprom();
+
 
 #endif /* MAIN_H_ */

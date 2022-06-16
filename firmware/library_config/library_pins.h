@@ -10,16 +10,12 @@
 
 // nRF24L01 library definitions
 // CE PIN
-#define nrf24l01_CE_DDR			DDRD
-#define nrf24l01_CE_PORT		PORTD
-#define nrf24l01_CE				7
+#define nrf24l01_CE_DDR			DDRB
+#define nrf24l01_CE_PORT		PORTB
+#define nrf24l01_CE				0
 // CSN PIN
 #define nrf24l01_CSN_DDR		DDRD
 #define nrf24l01_CSN_PORT		PORTD
-#define nrf24l01_CSN			6
-// IRQ PIN
-#define nrf24l01_IRQ_DDR		DDRD
-#define nrf24l01_IRQ_PORT		PORTD
-#define nrf24l01_IRQ			5
+#define nrf24l01_CSN			7
 
 #endif /* LIBRARY_PINS_H_ */

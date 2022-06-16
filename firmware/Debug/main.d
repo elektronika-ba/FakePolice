@@ -21,6 +21,7 @@ main.d main.o: .././main.c \
  d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/../../../../avr/include/util/delay.h \
  d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/../../../../avr/include/util/delay_basic.h \
  d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/../../../../avr/include/avr/power.h \
+ d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/../../../../avr/include/avr/sleep.h \
  .././main.h ../library_config/../lib/uart/uart.h \
  ../library_config/../lib/spi/spi.h \
  ../library_config/../lib/nrf24l01/nrf24l01.h \
@@ -69,6 +70,8 @@ d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-to
 d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/../../../../avr/include/util/delay_basic.h:
 
 d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/../../../../avr/include/avr/power.h:
+
+d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/../../../../avr/include/avr/sleep.h:
 
 .././main.h:
 
