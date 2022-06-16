@@ -150,7 +150,7 @@ void send_command(uint16_t command, uint8_t *param, uint8_t param_len) {
 	decrypted |= ((uint32_t)command) << 16; // add command to upper 2 bytes
 
 	// encrypt it
-	keeloq_encrypt(&decrypted, (uint64_t *)&kl_master_crypt_key);
+//	keeloq_encrypt(&decrypted, (uint64_t *)&kl_master_crypt_key);
 
 	// build the tx buffer
 	uint8_t tx_buff[32];
@@ -190,15 +190,14 @@ void process_command(uint8_t *rx_buff) {
 
 	// decrypt access code
 	uint32_t encrypted = rx_buff[0];
-	encrypted |= (uint16_t)rx_buff[1] << 8;
-	encrypted |= (uint32_t)rx_buff[2] << 16;
-	encrypted |= (uint32_t)rx_buff[3] << 24;
+	encrypted |= (uint16_t)(rx_buff[1]) << 8;
+	encrypted |= (uint32_t)(rx_buff[2]) << 16;
+	encrypted |= (uint32_t)(rx_buff[3]) << 24;
 
-	keeloq_decrypt(&encrypted, (uint64_t *)&kl_master_crypt_key);
+//	keeloq_decrypt(&encrypted, (uint64_t *)&kl_master_crypt_key);
 
 	// variable "encrypted" is now "decrypted". we need to verify whether this is a valid data or not.
-	// there is no MAC, so we treat entire data as MAC. encryption here does not
-	// provide secrecy but only message authenticity. that's all we care about here.
+	// encryption here does not provide secrecy but only message authenticity. that's all we care about here.
 
 	// extract sync rx_counter from the encrypted portion, it is at the lower 2 bytes
 	uint16_t enc_rx_counter = encrypted & 0xFFFF;
@@ -207,14 +206,14 @@ void process_command(uint8_t *rx_buff) {
 	uint16_t dec_command = encrypted >> 16;
 
 	// extract command from non-encrypted (plaintext) portion
-	uint16_t raw_command = rx_buff[5];
-	raw_command |= (uint16_t)(rx_buff[4] << 8);
+	uint16_t raw_command = rx_buff[4];
+	raw_command |= (uint16_t)(rx_buff[5]) << 8;
 
 	// verify message authenticity:
 	// 1. sequence must be within the window
-	// 2. encrypted and raw commands must match
+	// 2. command from encrypted portion and plaintext command must match (I know, I know, plaintext attack...)
 	if(
-		next_within_window(enc_rx_counter, kl_rx_counter, 32)
+		next_within_window(enc_rx_counter, kl_rx_counter, 64)
 		&& dec_command == raw_command
 	)
 	{
@@ -276,6 +275,11 @@ void process_command(uint8_t *rx_buff) {
 	}
 	else {
 		hacking_attempts_cnt++;
+		
+		// DEBUG
+		setHigh(LED_RED_PORT, LED_RED_PIN);
+		delay_builtin_ms_(500);
+		setLow(LED_RED_PORT, LED_RED_PIN);
 	}
 
 }
@@ -333,6 +337,30 @@ void update_kl_settings_to_eeprom() {
 
 int main(void)
 {
+	/*
+			// simuliraj prijem RF paketa
+
+			// RF PACKET 	  {[ROLLING ACCESS CODE 4 bytes][COMMAND 2 bytes][PARAM N bytes]}
+			// 	[first addr 0]{																}[last addr 31]
+
+			// ROLLING ACCESS CODE 4 bytes IS: {[COUNTER LSB][COUNTER MSB][COMMAND LSB][COMMAND MSB]}
+			//						   [addr 0]{													}[addr 3]
+			uint8_t param[26];
+			uint8_t rx_buff[32];
+
+			uint16_t command = RF_CMD_POLICE;
+			param[0] = 10;
+
+			rx_buff[0] = kl_rx_counter;
+			rx_buff[1] = kl_rx_counter >> 8;
+			rx_buff[2] = command;
+			rx_buff[3] = command >> 8;
+			rx_buff[4] = command;
+			rx_buff[5] = command >> 8;
+			memcpy(rx_buff+6, param, 26);
+			process_command(rx_buff);
+	*/
+	
 	// Misc hardware init
 	// this turns off all outputs & leds
 	misc_hw_init();
@@ -392,8 +420,6 @@ int main(void)
 	sei();
 
 	delay_builtin_ms_(50);
-
-	uint8_t rx_buff[32];
 
 	// DEBUGGING
 	#ifdef DEBUG
@@ -480,22 +506,19 @@ int main(void)
 			delay_builtin_ms_(60);
 			setLow(LED_RED_PORT, LED_RED_PIN);*/
 
-			// bajgi procitali RF paket, i palimo police lights
-			police_on(10);
-
-			/*
 			// verify that RF packet arrived and process it
 			if( nrf24l01_irq_rx_dr() )
 			{
 				while( !( nrf24l01_readregister(NRF24L01_REG_FIFO_STATUS) & NRF24L01_REG_RX_EMPTY) )
 				{
+					uint8_t rx_buff[32];
+					
 					nrf24l01_read(rx_buff);
 					nrf24l01_irq_clear_rx_dr();
 
 					process_command(rx_buff);
 				}
 			}
-			*/
 
 			radio_event = 0; // handled
 		}
