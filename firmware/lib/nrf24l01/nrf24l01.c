@@ -226,10 +226,10 @@ void nrf24l01_read(uint8_t *data)
 	// high CSN
 	nrf24l01_CSN_PORT |= _BV(nrf24l01_CSN);
 
-	/*
     // reset RX_DR bit
-    nrf24l01_writeregister(NRF24L01_REG_STATUS, NRF24L01_REG_RX_DR);
+    //nrf24l01_writeregister(NRF24L01_REG_STATUS, NRF24L01_REG_RX_DR);
 
+    /*
     //handle ack payload receipt
 	if (nrf24l01_getstatus() & (NRF24L01_REG_TX_DS))
 		nrf24l01_writeregister(NRF24L01_REG_STATUS, (NRF24L01_REG_TX_DS));

@@ -10,7 +10,8 @@
 
 #define DEBUG 1
 
-#define SECRET_KEELOQ_KEY 0x1223344556788990 // chose a secret code for yourself
+#define DEFAULT_KEELOQ_CRYPT_KEY 	0x1223344556788990 // chose a default secret code for yourself, or leave this one as it will change during operation
+#define DEFAULT_KEELOQ_COUNTER		1000 // also...
 
 // Limitations: ATmega328P (and family) PORTB.4 can only be used as INPUT if SPI mode is enabled.
 
@@ -26,6 +27,16 @@
 
 #define	calc_UBRR(bau)				(F_CPU/16/bau-1)
 #define calc_TWI(khz)				(((F_CPU/khz) - 16)/2)
+
+// EEPROM addresses
+#define	EEPROM_START				0								// start of our data in eeprom is here
+#define EEPROM_MAGIC				EEPROM_START + 0				// eeprom OK - magic value
+#define EEPROM_MASTER_CRYPT_KEY		EEPROM_MAGIC + 1				// master crypt key address
+#define EEPROM_RX_COUNTER			EEPROM_MASTER_CRYPT_KEY + 8		// keeloq counter for receiving data
+#define EEPROM_TX_COUNTER			EEPROM_RX_COUNTER + 2			// keeloq counter for sending data
+
+#define EEPROM_MAGIC_VALUE			0xAA
+//
 
 #define	DEFAULT_RF_CHANNEL			14		// this is system's default RF channel
 
@@ -44,6 +55,7 @@
 #define RF_CMD_SETRTC				0x5519	// set RTC
 #define RF_CMD_GETTELE				0x6087	// request for telemetry data
 #define RF_CMD_TELEDATA				0x7806	// telemetry data packet (we send this)
+#define RF_CMD_NEWKEY				0x4706	// keeloq key change
 
 // ADC pins
 

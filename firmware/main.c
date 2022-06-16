@@ -46,27 +46,46 @@ volatile uint32_t telemetry_timer_min = 0;
 // rolling code sync value (stored/updated to EEPROM)
 volatile uint16_t kl_rx_counter = 100;
 volatile uint16_t kl_tx_counter = 1000;
-volatile uint64_t kl_key = SECRET_KEELOQ_KEY;
+volatile uint64_t kl_master_crypt_key = 0;
 
 // RTC
 volatile uint8_t RTC[7] = {22, 6, 9, 12, 0, 0, 5};			// YY MM DD HH MM SS WEEKDAY(1-MON...7-SUN)
 volatile uint8_t bools[BOOL_BANK_SIZE] = { 0, 0 }; 				// 8 global boolean values per BOOL_BANK_SIZE
 volatile uint8_t rtc_slow_mode = 0;
 volatile uint64_t seconds_counter = 0;
+volatile uint8_t rtc_busy = 0;
 
 void send_telemetry() {
 	float solar_volt = read_solar_volt();
 	float boost_volt = read_boost_volt();
 	float batt_volt = read_batt_volt();
 	float temperature = read_temperature();
-	uint8_t batt_charging = !(BATT_CHRG_PINREG & _BV(BATT_CHRG_PIN));
 
 	// salji i ovo:
 	// hacking_attempts_cnt
 	// charging_time_sec
 
-	// TODO: pripremi paket i salji
-	// imam 26 bajta ukupno za ovo
+	// pripremi paket i salji, imam 26 bajta ukupno za ovo
+	// C5.3#5.2#4.1#-17#HHH#TTT
+	// 		C=charging, N=not charging
+	// 		5.3=solar voltage
+	//		5.2=booster voltage
+	//		4.1=battery voltage
+	//		-17=temperature, or without the "-" when positive
+	//		HHH=hacking attempts 0-999min
+	//		TTT=charging time in minutes 0-999min
+
+	uint8_t charging_or_not = 'N';
+	if(!(BATT_CHRG_PINREG & _BV(BATT_CHRG_PIN))) charging_or_not = 'C';
+
+	if(hacking_attempts_cnt > 999) hacking_attempts_cnt = 999;
+	uint16_t charging_time_min = charging_time_sec % 60;
+	if(charging_time_min > 999) charging_time_min = 999;
+
+	uint8_t param[26];
+	sprintf(param, "%c#%.1f#%.1f#%.1f#.0f#$", charging_or_not, solar_volt, boost_volt, batt_volt, temperature, hacking_attempts_cnt, charging_time_min);
+
+	send_command(RF_CMD_TELEDATA, param);
 
 	hacking_attempts_cnt = 0; // we can clear this one now
 }
@@ -126,43 +145,71 @@ void police_on(uint8_t times) {
 	police_lights_count = times; // start it
 }
 
-uint8_t send_command(uint16_t command, uint8_t *param) {
-	// todo
-	// kl_tx_counter
+void send_command(uint16_t command, uint8_t *param, uint8_t param_len) {
+	// build access code
+	uint32_t decrypted = kl_tx_counter; // add counter to lower 2 bytes
+	decrypted |= command << 16; // add command to upper 2 bytes
+
+	// encrypt it
+	keeloq_encrypt(&decrypted, (uint64_t *)&kl_master_crypt_key);
+
+	// build the tx buffer
+	uint8_t tx_buff[32];
+	uint8_t *tx_buff_ptr = tx_buff;
+
+	// ACCESS CODE
+	memcpy(tx_buff_ptr, &decrypted, 4);
+	tx_buff_ptr+=4;
+
+	// COMMAND
+	memcpy(tx_buff_ptr, &command, 2);
+	tx_buff_ptr+=2;
+
+	// PARAM
+	memcpy(tx_buff_ptr, param, param_len);
+	// tx_buff_ptr+=param_len; // not required
+
+	// send!
+	nrf24l01_write(tx_buff);
+
+	// we don't know if it was sent or not... lets try it that way.
+	// we can see if package was received by the receiver and then increase the counter.
+	kl_tx_counter++;
+	update_kl_settings_to_eeprom();
+
+	// back to listening
+	nrf24l01_setRX();
 }
 
 void process_command(uint8_t *rx_buff) {
-	// 32bytes maximum{[ROLLING ACCESS CODE 4 bytes][COMMAND 2 bytes][PARAM N bytes]}
-	// COMMAND+Counter is also contained within the ROLLING ACCESS CODE
-	// ROLLING ACCESS CODE 4 bytes IS: [COUNTER MSB][COUNTER LSB][COMMAND MSB][COMMAND LSB]
+
+	// RF PACKET 	  {[ROLLING ACCESS CODE 4 bytes][COMMAND 2 bytes][PARAM N bytes]}
+	// 	[first addr 0]{																}[last addr 31]
+
+	// ROLLING ACCESS CODE 4 bytes IS: {[COUNTER LSB][COUNTER MSB][COMMAND LSB][COMMAND MSB]}
+	//						   [addr 0]{													}[addr 3]
 
 	// decrypt access code
-	uint32_t encrypted = 0;
-	encrypted |= (uint32_t)rx_buff[3] << 24;
-	encrypted |= (uint32_t)rx_buff[2] << 16;
+	uint32_t encrypted = rx_buff[0];
 	encrypted |= (uint16_t)rx_buff[1] << 8;
-	encrypted |= rx_buff[0];
+	encrypted |= (uint32_t)rx_buff[2] << 16;
+	encrypted |= (uint32_t)rx_buff[3] << 24;
 
-	keeloq_decrypt(&encrypted, (uint64_t *)&kl_key);
+	keeloq_decrypt(&encrypted, (uint64_t *)&kl_master_crypt_key);
 
 	// variable "encrypted" is now "decrypted". we need to verify whether this is a valid data or not.
 	// there is no MAC, so we treat entire data as MAC. encryption here does not
-	// provide secrecy but only message authenticity. that's all we care about really.
+	// provide secrecy but only message authenticity. that's all we care about here.
 
-	// extract command from the encrypted portion
-	uint16_t dec_command = 0;
-	dec_command |= encrypted & 0xFF00;
-	dec_command |= (uint8_t)encrypted;
+	// extract sync rx_counter from the encrypted portion, it is at the lower 2 bytes
+	uint16_t enc_rx_counter = encrypted & 0xFFFF;
 
-	// extract sync rx_counter from the encrypted portion
-	uint16_t enc_rx_counter = 0;
-	enc_rx_counter |= encrypted >> 16 & 0xFF00;
-	enc_rx_counter |= (uint8_t)encrypted >> 24;
+	// extract command from the encrypted portion, it is at the upper 2 bytes
+	uint16_t dec_command = encrypted >> 16;
 
 	// extract command from non-encrypted (plaintext) portion
-	uint16_t raw_command = 0;
-	raw_command |= rx_buff[4] << 8;
-	raw_command |= rx_buff[5];
+	uint16_t raw_command = rx_buff[5];
+	raw_command |= (uint16_t)(rx_buff[4] << 8);
 
 	// verify message authenticity:
 	// 1. sequence must be within the window
@@ -173,11 +220,10 @@ void process_command(uint8_t *rx_buff) {
 	)
 	{
 		kl_rx_counter = enc_rx_counter + 1; // keep track of the sync counter
-
-		// OK to process further...
+		update_kl_settings_to_eeprom(); // save (everything every time)
 
 		// optional parameter pointer
-		uint8_t *param = rx_buff + 6; // processed 6 bytes so far, we are left with 32-6 = 26 for the parameter. 32 because nRF24L01 packet is 32 bytes long max.
+		uint8_t *param = rx_buff + 6; // processed 6 bytes so far, so skip them. (Note: we are left with 32-6 = 26 for the parameter. 32 because nRF24L01 packet is 32 bytes long max)
 
 		switch(dec_command) {
 			case RF_CMD_ABORT:
@@ -194,12 +240,23 @@ void process_command(uint8_t *rx_buff) {
 			break;
 
 			case RF_CMD_SETRTC:
-				// extract RTC from param
+				while(rtc_busy); // sync
 
-				// todo...
-				// parse param
+				TCCR2B = 0; // pause RTC...
+
+				// get RTC from param 7 bytes - mind the byteorder
+				memcpy(&RTC, param, 7);
+
+				set_rtc_speed(rtc_slow_mode); // resume RTC
 
 				rtc_ok = 1;
+			break;
+
+			case RF_CMD_NEWKEY:
+				// get new key from param 8 bytes - mind the byteorder
+				memcpy(&kl_master_crypt_key, param, 8);
+
+				update_kl_settings_to_eeprom();
 			break;
 
 			case RF_CMD_GETTELE:
@@ -251,6 +308,20 @@ void police_once() {
 	}
 }
 
+void update_kl_settings_to_eeprom() {
+	// save all working stuff to eeprom, and mark if VALID
+
+	// COUNTERS
+	eeprom_update_word((uint8_t *)EEPROM_TX_COUNTER, kl_tx_counter);
+	eeprom_update_word((uint8_t *)EEPROM_RX_COUNTER, kl_rx_counter);
+
+	// MASTER CRYPT-KEY
+	eeprom_update_block((uint64_t *)&kl_master_crypt_key, (uint8_t *)EEPROM_MASTER_CRYPT_KEY, 8);
+
+	// say eeprom is valid
+	eeprom_update_byte((uint8_t *)EEPROM_MAGIC, EEPROM_MAGIC_VALUE);
+}
+
 int main(void)
 {
 	// Misc hardware init
@@ -261,6 +332,29 @@ int main(void)
 	setInput(DDRD, 0);
 	setOutput(DDRD, 1);
 	uart_init(calc_UBRR(19200));
+
+	// read KEELOQ stuff from EEPROM
+	// eeprom has some settings?
+    if( eeprom_read_byte((uint8_t *)EEPROM_MAGIC) == EEPROM_MAGIC_VALUE) {
+		eeprom_read_block((uint64_t *)&kl_master_crypt_key, (uint8_t *)EEPROM_MASTER_CRYPT_KEY, 8);
+		kl_rx_counter = eeprom_read_word((uint8_t *)EEPROM_RX_COUNTER);
+		kl_tx_counter = eeprom_read_word((uint8_t *)EEPROM_TX_COUNTER);
+	}
+	// nope, use defaults
+	else {
+		setHigh(LED_RED_PORT, LED_RED_PIN);
+		setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
+		delay_builtin_ms_(100);
+		setLow(LED_RED_PORT, LED_RED_PIN);
+		setLow(LED_BLUE_PORT, LED_BLUE_PIN);
+
+		master_crypt_key = DEFAULT_KEELOQ_CRYPT_KEY;
+		kl_rx_counter = DEFAULT_KEELOQ_COUNTER;
+		kl_tx_counter = DEFAULT_KEELOQ_COUNTER;
+
+		// prebaci to odma u EEPROM, nastavicemo odatle ubuduce
+		update_kl_settings_to_eeprom();
+	}
 
 	// Init the SPI port
 	SPI_init();
@@ -456,6 +550,8 @@ void delay_builtin_ms_(uint16_t delay_ms) {
 // This interrupt can happen on every 1s or every 8s
 ISR(TIMER2_OVF_vect, ISR_NOBLOCK)
 {
+	rtc_busy = 1; // for sync
+
 	rtc_event = 1;
 
 	uint8_t sec_step = 1;
@@ -555,6 +651,8 @@ ISR(TIMER2_OVF_vect, ISR_NOBLOCK)
 		RTC[DATE_Y]++;
 		RTC[DATE_M] = 1;
 	}
+
+	rtc_busy = 0; // for sync
 }
 
 //##############################
