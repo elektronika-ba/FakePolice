@@ -440,7 +440,7 @@ int main(void)
 
 			// charging
 			if( !(BATT_CHRG_PINREG & _BV(BATT_CHRG_PIN)) ) {
-				// nothing (yet)
+				set_rtc_speed(0); // 1-sec RTC
 			}
 			// not charging (anymore)
 			else {
@@ -477,15 +477,16 @@ int main(void)
 			if(!telemetry_timer_min) {
 				if(read_solar_volt() >= LOWEST_SOLVOLT_GOOD) {
 					send_telemetry();
+					set_rtc_speed(0); // 1-sec RTC
+				}
+				else {
+					set_rtc_speed(1); // 8-sec RTC
 				}
 				telemetry_timer_min = TELEMETRY_MINUTES; // reload for next time
 			}
 
 			rtc_event = 0; // handled
 		}
-
-		// whatever wakes us up, we can tweak our RTC period (but every 5min)
-		// hm...
 
 	}
 
