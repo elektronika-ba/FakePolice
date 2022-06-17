@@ -50,7 +50,7 @@ volatile uint16_t kl_tx_counter;
 volatile uint64_t kl_master_crypt_key;
 
 // RTC
-volatile uint8_t RTC[7] = {22, 6, 9, 12, 0, 0, 5};			// YY MM DD HH MM SS WEEKDAY(1-MON...7-SUN)
+volatile uint8_t RTC[7] = {22, 6, 9, 12, 0, 0, 4};			// YY MM DD HH MM SS WEEKDAY(1-MON...7-SUN)
 volatile uint8_t bools[BOOL_BANK_SIZE] = { 0, 0 }; 				// 8 global boolean values per BOOL_BANK_SIZE
 volatile uint8_t rtc_slow_mode = 0;
 volatile uint64_t seconds_counter = 0;
@@ -81,6 +81,11 @@ void send_telemetry() {
 
 	uint16_t charging_time_min = charging_time_sec % 60;
 	if(charging_time_min > 999) charging_time_min = 999;
+
+	solar_volt = 5.4;
+	boost_volt = 7.3;
+	batt_volt = 9.6;
+	temperature = 34.1;
 
 	uint8_t param[26];
 	sprintf((char *)param, "%c#%.1f#%.1f#%.1f#%.0f#%d#%d#$", charging_or_not, solar_volt, boost_volt, batt_volt, temperature, hacking_attempts_cnt, charging_time_min);
@@ -248,7 +253,7 @@ void process_command(uint8_t *rx_buff) {
 				TCCR2B = 0; // pause RTC...
 
 				// get RTC from param 7 bytes - mind the byteorder
-				memcpy(&RTC, param, 7);
+				memcpy((uint8_t *)&RTC, param, 7);
 
 				set_rtc_speed(rtc_slow_mode); // resume RTC
 
@@ -349,6 +354,8 @@ void update_kl_settings_to_eeprom() {
 
 int main(void)
 {
+	send_telemetry();
+	
 	// Misc hardware init
 	// this turns off all outputs & leds
 	misc_hw_init();

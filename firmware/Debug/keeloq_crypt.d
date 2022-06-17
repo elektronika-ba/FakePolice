@@ -1,21 +1,21 @@
 keeloq_crypt.d keeloq_crypt.o: .././keeloq_crypt.c .././keeloq_crypt.h \
- d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/../../../../avr/include/stdio.h \
- d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/../../../../avr/include/inttypes.h \
- d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/include/stdint.h \
- d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/../../../../avr/include/stdint.h \
- d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/include/stdarg.h \
- d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/include/stddef.h
+ d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\stdio.h \
+ d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\inttypes.h \
+ d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\lib\gcc\avr\5.4.0\include\stdint.h \
+ d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\stdint.h \
+ d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\lib\gcc\avr\5.4.0\include\stdarg.h \
+ d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\lib\gcc\avr\5.4.0\include\stddef.h
 
 .././keeloq_crypt.h:
 
-d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/../../../../avr/include/stdio.h:
+d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\stdio.h:
 
-d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/../../../../avr/include/inttypes.h:
+d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\inttypes.h:
 
-d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/include/stdint.h:
+d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\lib\gcc\avr\5.4.0\include\stdint.h:
 
-d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/../../../../avr/include/stdint.h:
+d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\stdint.h:
 
-d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/include/stdarg.h:
+d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\lib\gcc\avr\5.4.0\include\stdarg.h:
 
-d:\program\ files\atmel\atmel\ toolchain\avr8\ gcc\native\3.4.2.1002\avr8-gnu-toolchain\bin\../lib/gcc/avr/4.7.2/include/stddef.h:
+d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\lib\gcc\avr\5.4.0\include\stddef.h:
