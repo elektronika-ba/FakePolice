@@ -82,11 +82,6 @@ void send_telemetry() {
 	uint16_t charging_time_min = charging_time_sec % 60;
 	if(charging_time_min > 999) charging_time_min = 999;
 
-	solar_volt = 5.4;
-	boost_volt = 7.3;
-	batt_volt = 9.6;
-	temperature = 34.1;
-
 	uint8_t param[26];
 	sprintf((char *)param, "%c#%.1f#%.1f#%.1f#%.0f#%d#%d#$", charging_or_not, solar_volt, boost_volt, batt_volt, temperature, hacking_attempts_cnt, charging_time_min);
 
@@ -264,7 +259,7 @@ void process_command(uint8_t *rx_buff) {
 			case RF_CMD_NEWKEY:
 			{
 				// get new key from param 8 bytes - mind the byteorder
-				memcpy((uint8_t *)&kl_master_crypt_key, &param, 8);
+				memcpy((uint8_t *)&kl_master_crypt_key, param, 8);
 
 				update_kl_settings_to_eeprom();
 			}
