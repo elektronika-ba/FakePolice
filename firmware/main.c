@@ -44,10 +44,10 @@ volatile uint8_t police_lights_busy = 0;
 volatile uint32_t telemetry_timer_min = 0;
 
 // rolling code sync value (stored/updated to EEPROM)
-volatile uint16_t kl_rx_counter = DEFAULT_KEELOQ_COUNTER;
-volatile uint16_t kl_rx_counter_resync = DEFAULT_KEELOQ_COUNTER; // this follows value of kl_rx_counter
-volatile uint16_t kl_tx_counter = DEFAULT_KEELOQ_COUNTER;
-volatile uint64_t kl_master_crypt_key = DEFAULT_KEELOQ_CRYPT_KEY;
+volatile uint16_t kl_rx_counter;
+volatile uint16_t kl_rx_counter_resync; // this follows value of kl_rx_counter
+volatile uint16_t kl_tx_counter;
+volatile uint64_t kl_master_crypt_key;
 
 // RTC
 volatile uint8_t RTC[7] = {22, 6, 9, 12, 0, 0, 5};			// YY MM DD HH MM SS WEEKDAY(1-MON...7-SUN)
@@ -219,7 +219,7 @@ void process_command(uint8_t *rx_buff) {
 	)
 	{
 		kl_rx_counter = enc_rx_counter; // keep track of the sync counter
-		kl_rx_counter_resync = kl_rx_counter; // follow this one always
+		kl_rx_counter_resync = enc_rx_counter; // follow this one always
 		update_kl_settings_to_eeprom(); // save (everything every time)
 
 		// optional parameter pointer
@@ -282,7 +282,7 @@ void process_command(uint8_t *rx_buff) {
 			if(next_within_window(enc_rx_counter, kl_rx_counter_resync, 1)) {
 				kl_rx_counter = enc_rx_counter;
 			}
-			kl_rx_counter_resync = kl_rx_counter;
+			kl_rx_counter_resync = enc_rx_counter;
 		}
 		else {
 			hacking_attempts_cnt++;
@@ -371,7 +371,6 @@ int main(void)
 		kl_rx_counter = DEFAULT_KEELOQ_COUNTER;
 		kl_tx_counter = DEFAULT_KEELOQ_COUNTER;
 
-		// prebaci to odma u EEPROM, nastavicemo odatle ubuduce
 		update_kl_settings_to_eeprom();
 	}
 	kl_rx_counter_resync = kl_rx_counter; // follow
@@ -412,9 +411,7 @@ int main(void)
 
 	// DEBUGGING
 	#ifdef DEBUG
-	//police_inline(2);
-	//delay_builtin_ms_(300);
-	speed_camera();
+	//speed_camera();
 	#endif
 
 	// I figured that there is no point in waking up every 1s
@@ -423,8 +420,9 @@ int main(void)
 
 
 
-
 // DEBUG
+uint16_t kkk = kl_rx_counter + 100;
+while(1) {
 		// RF PACKET 	  {[ROLLING ACCESS CODE 4 bytes][COMMAND 2 bytes][PARAM N bytes]}
 		// 	[first addr 0]{																}[last addr 31]
 
@@ -434,9 +432,9 @@ int main(void)
 		uint8_t rx_buff[32];
 
 		uint16_t command = RF_CMD_POLICE;
-		param[0] = 10;
+		param[0] = 2;
 
-		uint16_t kkk = kl_rx_counter + 1;
+		kkk++;
 
 		rx_buff[0] = kkk;
 		rx_buff[1] = kkk >> 8;
@@ -446,8 +444,10 @@ int main(void)
 		rx_buff[5] = command >> 8;
 		memcpy(rx_buff+6, param, 26);
 		process_command(rx_buff);
+		
+		delay_builtin_ms_(5000);
+}
 // DEBUG
-
 
 
 
