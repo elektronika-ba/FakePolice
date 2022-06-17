@@ -151,7 +151,7 @@ void send_command(uint16_t command, uint8_t *param, uint8_t param_len) {
 	decrypted |= ((uint32_t)command) << 16; // add command to upper 2 bytes
 
 	// encrypt it
-//	keeloq_encrypt(&decrypted, (uint64_t *)&kl_master_crypt_key);
+	keeloq_encrypt(&decrypted, (uint64_t *)&kl_master_crypt_key);
 
 	// build the tx buffer
 	uint8_t tx_buff[32];
@@ -195,7 +195,7 @@ void process_command(uint8_t *rx_buff) {
 	encrypted |= (uint32_t)(rx_buff[2]) << 16;
 	encrypted |= (uint32_t)(rx_buff[3]) << 24;
 
-//	keeloq_decrypt(&encrypted, (uint64_t *)&kl_master_crypt_key);
+	keeloq_decrypt(&encrypted, (uint64_t *)&kl_master_crypt_key);
 
 	// variable "encrypted" is now "decrypted". we need to verify whether this is a valid data or not.
 	// encryption here does not provide secrecy but only message authenticity. that's all we care about here.
@@ -349,8 +349,6 @@ void update_kl_settings_to_eeprom() {
 
 int main(void)
 {
-	send_telemetry();
-	
 	// Misc hardware init
 	// this turns off all outputs & leds
 	misc_hw_init();
@@ -389,6 +387,7 @@ int main(void)
 	my_rx_addr[4] = 88;
 	nrf24l01_init(DEFAULT_RF_CHANNEL);
 	nrf24l01_setrxaddr0(my_rx_addr);
+	nrf24l01_settxaddr(my_rx_addr);
 	nrf24l01_setRX();
 
 	// Initialize Timer0 overflow ISR for 8.192ms interval, no need to go faster
@@ -421,7 +420,7 @@ int main(void)
 	set_rtc_speed(1); // 8-sec RTC
 
 
-
+/*
 // DEBUG
 uint16_t kkk = kl_rx_counter + 100;
 while(1) {
@@ -450,7 +449,7 @@ while(1) {
 		delay_builtin_ms_(5000);
 }
 // DEBUG
-
+*/
 
 
 	// main program
@@ -480,11 +479,11 @@ while(1) {
 			setLow(LED_RED_PORT, LED_RED_PIN);
 			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
 
-			#ifdef DEBUG
+			/*#ifdef DEBUG
 			setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
 			delay_builtin_ms_(60);
 			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
-			#endif
+			#endif*/
 
 			// configure sleep mode
 			set_sleep_mode(SLEEP_MODE_PWR_SAVE);
@@ -494,11 +493,11 @@ while(1) {
 			
 			// WOKEN UP!
 			
-			#ifdef DEBUG
+			/*#ifdef DEBUG
 			setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
 			delay_builtin_ms_(60);
 			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
-			#endif
+			#endif*/
 		}
 
 		// (some interrupt happens) and we get into the ISR() of it... after it finishes, we continue here:
