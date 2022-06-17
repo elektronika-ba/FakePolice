@@ -44,9 +44,10 @@ volatile uint8_t police_lights_busy = 0;
 volatile uint32_t telemetry_timer_min = 0;
 
 // rolling code sync value (stored/updated to EEPROM)
-volatile uint16_t kl_rx_counter = 100;
-volatile uint16_t kl_tx_counter = 1000;
-volatile uint64_t kl_master_crypt_key = 0;
+volatile uint16_t kl_rx_counter = DEFAULT_KEELOQ_COUNTER;
+volatile uint16_t kl_rx_counter_resync = DEFAULT_KEELOQ_COUNTER; // this follows value of kl_rx_counter
+volatile uint16_t kl_tx_counter = DEFAULT_KEELOQ_COUNTER;
+volatile uint64_t kl_master_crypt_key = DEFAULT_KEELOQ_CRYPT_KEY;
 
 // RTC
 volatile uint8_t RTC[7] = {22, 6, 9, 12, 0, 0, 5};			// YY MM DD HH MM SS WEEKDAY(1-MON...7-SUN)
@@ -217,7 +218,8 @@ void process_command(uint8_t *rx_buff) {
 		&& dec_command == raw_command
 	)
 	{
-		kl_rx_counter = enc_rx_counter + 1; // keep track of the sync counter
+		kl_rx_counter = enc_rx_counter; // keep track of the sync counter
+		kl_rx_counter_resync = kl_rx_counter; // follow this one always
 		update_kl_settings_to_eeprom(); // save (everything every time)
 
 		// optional parameter pointer
@@ -274,7 +276,17 @@ void process_command(uint8_t *rx_buff) {
 		}
 	}
 	else {
-		hacking_attempts_cnt++;
+		// maybe it is within the larger re-sync window?
+		if(next_within_window(enc_rx_counter, kl_rx_counter_resync, 32767)) {
+			// caught up?
+			if(next_within_window(enc_rx_counter, kl_rx_counter_resync, 1)) {
+				kl_rx_counter = enc_rx_counter;
+			}
+			kl_rx_counter_resync = kl_rx_counter;
+		}
+		else {
+			hacking_attempts_cnt++;
+		}
 		
 		// DEBUG
 		setHigh(LED_RED_PORT, LED_RED_PIN);
@@ -324,12 +336,12 @@ void police_inline(uint8_t times) {
 void update_kl_settings_to_eeprom() {
 	// save all working stuff to eeprom, and mark if VALID
 
-	// COUNTERS
-	eeprom_update_word((uint16_t *)EEPROM_TX_COUNTER, kl_tx_counter);
-	eeprom_update_word((uint16_t *)EEPROM_RX_COUNTER, kl_rx_counter);
-
 	// MASTER CRYPT-KEY
 	eeprom_update_block((uint64_t *)&kl_master_crypt_key, (uint8_t *)EEPROM_MASTER_CRYPT_KEY, 8);
+
+	// COUNTERS
+	eeprom_update_word((uint16_t *)EEPROM_RX_COUNTER, kl_rx_counter);
+	eeprom_update_word((uint16_t *)EEPROM_TX_COUNTER, kl_tx_counter);
 
 	// say eeprom is valid
 	eeprom_update_byte((uint8_t *)EEPROM_MAGIC, EEPROM_MAGIC_VALUE);
@@ -337,30 +349,6 @@ void update_kl_settings_to_eeprom() {
 
 int main(void)
 {
-	/*
-			// simuliraj prijem RF paketa
-
-			// RF PACKET 	  {[ROLLING ACCESS CODE 4 bytes][COMMAND 2 bytes][PARAM N bytes]}
-			// 	[first addr 0]{																}[last addr 31]
-
-			// ROLLING ACCESS CODE 4 bytes IS: {[COUNTER LSB][COUNTER MSB][COMMAND LSB][COMMAND MSB]}
-			//						   [addr 0]{													}[addr 3]
-			uint8_t param[26];
-			uint8_t rx_buff[32];
-
-			uint16_t command = RF_CMD_POLICE;
-			param[0] = 10;
-
-			rx_buff[0] = kl_rx_counter;
-			rx_buff[1] = kl_rx_counter >> 8;
-			rx_buff[2] = command;
-			rx_buff[3] = command >> 8;
-			rx_buff[4] = command;
-			rx_buff[5] = command >> 8;
-			memcpy(rx_buff+6, param, 26);
-			process_command(rx_buff);
-	*/
-	
 	// Misc hardware init
 	// this turns off all outputs & leds
 	misc_hw_init();
@@ -386,6 +374,7 @@ int main(void)
 		// prebaci to odma u EEPROM, nastavicemo odatle ubuduce
 		update_kl_settings_to_eeprom();
 	}
+	kl_rx_counter_resync = kl_rx_counter; // follow
 
 	// Init the SPI port
 	SPI_init();
@@ -431,6 +420,36 @@ int main(void)
 	// I figured that there is no point in waking up every 1s
 	// so I am fixing it to 8 sec wakeup interval
 	set_rtc_speed(1); // 8-sec RTC
+
+
+
+
+// DEBUG
+		// RF PACKET 	  {[ROLLING ACCESS CODE 4 bytes][COMMAND 2 bytes][PARAM N bytes]}
+		// 	[first addr 0]{																}[last addr 31]
+
+		// ROLLING ACCESS CODE 4 bytes IS: {[COUNTER LSB][COUNTER MSB][COMMAND LSB][COMMAND MSB]}
+		//						   [addr 0]{													}[addr 3]
+		uint8_t param[26];
+		uint8_t rx_buff[32];
+
+		uint16_t command = RF_CMD_POLICE;
+		param[0] = 10;
+
+		uint16_t kkk = kl_rx_counter + 1;
+
+		rx_buff[0] = kkk;
+		rx_buff[1] = kkk >> 8;
+		rx_buff[2] = command;
+		rx_buff[3] = command >> 8;
+		rx_buff[4] = command;
+		rx_buff[5] = command >> 8;
+		memcpy(rx_buff+6, param, 26);
+		process_command(rx_buff);
+// DEBUG
+
+
+
 
 	// main program
 	while(1) {

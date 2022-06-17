@@ -29,11 +29,11 @@
 #define calc_TWI(khz)				(((F_CPU/khz) - 16)/2)
 
 // EEPROM addresses
-#define	EEPROM_START				0								// start of our data in eeprom is here
-#define EEPROM_MAGIC				EEPROM_START + 0				// eeprom OK - magic value
-#define EEPROM_MASTER_CRYPT_KEY		EEPROM_MAGIC + 1				// master crypt key address
-#define EEPROM_RX_COUNTER			EEPROM_MASTER_CRYPT_KEY + 8		// keeloq counter for receiving data
-#define EEPROM_TX_COUNTER			EEPROM_RX_COUNTER + 2			// keeloq counter for sending data
+#define	EEPROM_START				(0)									// start of our data in eeprom is here
+#define EEPROM_MAGIC				(EEPROM_START + 0)					// eeprom OK - magic value
+#define EEPROM_MASTER_CRYPT_KEY		(EEPROM_MAGIC + 1)					// master crypt key address
+#define EEPROM_RX_COUNTER			(EEPROM_MASTER_CRYPT_KEY + 8)		// keeloq counter for receiving data
+#define EEPROM_TX_COUNTER			(EEPROM_RX_COUNTER + 2)				// keeloq counter for sending data
 
 #define EEPROM_MAGIC_VALUE			0xAA
 //
