@@ -46,7 +46,7 @@
 #define POLICE_LIGHTS_STAGE_COUNT	5		// how many times should one color blink before switching to other color
 #define POLICE_LIGHTS_STAGE_ON_8MS	5		// delay&on-time between blinks/toggles of the LED ... in 8ms steps!!!
 
-#define TELEMETRY_MINUTES			30		// on every X minutes send telemetry data to "home"
+#define TELEMETRY_MINUTES			3		// on every X minutes send telemetry data to "home"
 
 // RF Commands (just random values known to both sides)
 #define RF_CMD_ABORT				0x2496	// aborts current command

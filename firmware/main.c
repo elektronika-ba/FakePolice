@@ -85,7 +85,7 @@ void send_telemetry() {
 	uint8_t param[26];
 	sprintf((char *)param, "%c#%.1f#%.1f#%.1f#%.0f#%d#%d#$", charging_or_not, solar_volt, boost_volt, batt_volt, temperature, hacking_attempts_cnt, charging_time_min);
 
-	send_command(RF_CMD_TELEDATA, param, 32);
+	send_command(RF_CMD_TELEDATA, param, 26);
 
 	hacking_attempts_cnt = 0; // we can clear this one now
 }
@@ -412,13 +412,20 @@ int main(void)
 
 	// DEBUGGING
 	#ifdef DEBUG
-	//speed_camera();
+	for(uint8_t i=0; i<3; i++) {
+		setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
+		setHigh(LED_RED_PORT, LED_RED_PIN);
+		delay_builtin_ms_(100);
+		setLow(LED_BLUE_PORT, LED_BLUE_PIN);
+		setLow(LED_RED_PORT, LED_RED_PIN);
+		delay_builtin_ms_(100);
+	}
+	delay_builtin_ms_(200);
 	#endif
 
 	// I figured that there is no point in waking up every 1s
 	// so I am fixing it to 8 sec wakeup interval
 	set_rtc_speed(1); // 8-sec RTC
-
 
 /*
 // DEBUG
@@ -479,11 +486,12 @@ while(1) {
 			setLow(LED_RED_PORT, LED_RED_PIN);
 			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
 
-			/*#ifdef DEBUG
+			#ifdef DEBUG
 			setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
-			delay_builtin_ms_(60);
+			delay_builtin_ms_(50);
 			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
-			#endif*/
+			delay_builtin_ms_(50);
+			#endif
 
 			// configure sleep mode
 			set_sleep_mode(SLEEP_MODE_PWR_SAVE);
@@ -493,11 +501,12 @@ while(1) {
 			
 			// WOKEN UP!
 			
-			/*#ifdef DEBUG
+			#ifdef DEBUG
 			setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
-			delay_builtin_ms_(60);
+			delay_builtin_ms_(50);
 			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
-			#endif*/
+			delay_builtin_ms_(50);
+			#endif
 		}
 
 		// (some interrupt happens) and we get into the ISR() of it... after it finishes, we continue here:
@@ -521,10 +530,6 @@ while(1) {
 
 		// did radio packet arrive?
 		if(radio_event) {
-
-			/*setHigh(LED_RED_PORT, LED_RED_PIN);
-			delay_builtin_ms_(60);
-			setLow(LED_RED_PORT, LED_RED_PIN);*/
 
 			// verify that RF packet arrived and process it
 			if( nrf24l01_irq_rx_dr() )
