@@ -38,7 +38,7 @@ void nrf24l01_init(uint8_t channel)
 	nrf24l01_writeregister(NRF24L01_REG_RF_CH, channel); // RF channel
 
 	// RF_SETUP
-	nrf24l01_writeregister(NRF24L01_REG_RF_SETUP, 0b00100110); // max rf power, 125kbps
+	nrf24l01_writeregister(NRF24L01_REG_RF_SETUP, 0b00100110); // max rf power, 250kbps
 
 	// STATUS - not required
 	//nrf24l01_writeregister(NRF24L01_REG_STATUS, ?);
@@ -171,7 +171,7 @@ void nrf24l01_setRX()
 	nrf24l01_writeregister(NRF24L01_REG_CONFIG, nrf24l01_readregister(NRF24L01_REG_CONFIG) | (NRF24L01_REG_PRIM_RX)); //prx mode
 	nrf24l01_writeregister(NRF24L01_REG_CONFIG, nrf24l01_readregister(NRF24L01_REG_CONFIG) | (NRF24L01_REG_PWR_UP)); //power up
 	nrf24l01_writeregister(NRF24L01_REG_STATUS, (NRF24L01_REG_RX_DR) | (NRF24L01_REG_TX_DS) | (NRF24L01_REG_MAX_RT)); //reset status
-	
+
 	// set IRQ pin to interrupt on data received - others disabled
 	nrf24l01_writeregister(NRF24L01_REG_CONFIG, nrf24l01_readregister(NRF24L01_REG_CONFIG) | (NRF24L01_REG_MAX_RT)); // 1=disable on MAX RT
 	nrf24l01_writeregister(NRF24L01_REG_CONFIG, nrf24l01_readregister(NRF24L01_REG_CONFIG) | (NRF24L01_REG_TX_DS)); // 1=disable on TX done

@@ -40,7 +40,7 @@
 
 #define	DEFAULT_RF_CHANNEL			14		// this is system's default RF channel
 
-#define LOWEST_SOLVOLT_GOOD			3000	// mV required at solar panel in order to send the timed-telemetry
+#define LOWEST_SOLVOLT_GOOD			2500	// mV required at solar panel in order to send the timed-telemetry
 #define LOWEST_BATT_VOLT_MV			3600	// mV lowest battery voltage allowed for blinking the LEDs. below this voltage telemetry stops and device will not blink LEDs anymore
 
 #define POLICE_LIGHTS_STAGE_COUNT	5		// how many times should one color blink before switching to other color
@@ -161,7 +161,7 @@ extern void misc_hw_init();
 extern void delay_builtin_ms_(uint16_t);
 extern uint8_t isleapyear(uint16_t); // calculate if given year is leap year
 extern uint8_t next_within_window(uint16_t, uint16_t, uint16_t);
-extern double read_adc_mv(uint8_t admux_val, uint32_t Rup, uint32_t Rdn, uint8_t how_many);
+extern double read_adc_mv(uint8_t admux_val, double Rup, double Rdn, uint8_t how_many);
 extern void send_telemetry();
 extern void set_rtc_speed(uint8_t slow);
 extern double read_temperature();

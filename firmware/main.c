@@ -64,7 +64,7 @@ void send_telemetry() {
 
 	// salji i ovo:
 	// hacking_attempts_cnt
-	// charging_time_sec
+	// charging time in minutes
 
 	// pripremi paket i salji, imam 26 bajta ukupno za ovo
 	// C5.3#5.2#4.1#-17#HHH#TTT
@@ -79,11 +79,11 @@ void send_telemetry() {
 	uint8_t charging_or_not = 'N';
 	if(!(BATT_CHRG_PINREG & _BV(BATT_CHRG_PIN))) charging_or_not = 'C';
 
-	uint16_t charging_time_min = charging_time_sec % 60;
+	uint16_t charging_time_min = charging_time_sec / 60;
 	if(charging_time_min > 999) charging_time_min = 999;
 
 	uint8_t param[26];
-	sprintf((char *)param, "%c#%.1f#%.1f#%.1f#%.0f#%d#%d#$", charging_or_not, solar_volt, boost_volt, batt_volt, temperature, hacking_attempts_cnt, charging_time_min);
+	sprintf((char *)param, "%c#%.1f#%.1f#%.1f#%.0f#%d#%d#$", charging_or_not, solar_volt/1000.0, boost_volt/1000.0, batt_volt/1000.0, temperature, hacking_attempts_cnt, charging_time_min);
 
 	send_command(RF_CMD_TELEDATA, param, 26);
 
@@ -116,15 +116,15 @@ double read_temperature() {
 }
 
 double read_solar_volt() {
-	return read_adc_mv(SOL_VOLT_ADMUX_VAL, 47000, 47000, 16);
+	return read_adc_mv(SOL_VOLT_ADMUX_VAL, 47000.0, 47000.0, 16);
 }
 
 double read_boost_volt() {
-	return read_adc_mv(BOOST_VOLT_ADMUX_VAL, 47000, 47000, 16);
+	return read_adc_mv(BOOST_VOLT_ADMUX_VAL, 47000.0, 47000.0, 16);
 }
 
 double read_batt_volt() {
-	return read_adc_mv(BATT_VOLT_ADMUX_VAL, 47000, 100000, 16);
+	return read_adc_mv(BATT_VOLT_ADMUX_VAL, 47000.0, 100000.0, 16);
 }
 
 // stop police lights in ISR (if currently running)
@@ -172,10 +172,27 @@ void send_command(uint16_t command, uint8_t *param, uint8_t param_len) {
 	// send!
 	nrf24l01_write(tx_buff);
 
-	// we don't know if it was sent or not... lets try it that way.
-	// we can see if package was received by the receiver and then increase the counter.
-	kl_tx_counter++;
-	update_kl_settings_to_eeprom();
+	// wait until the packet has been sent or the maximum number of retries has been active - all events are mapped to interrupt
+	while( !(nrf24l01_irq_max_rt() || nrf24l01_irq_tx_ds()) )
+	{
+		_delay_ms(1); // da usporimo i malo rasteretimo SPI
+	}
+
+	// check if packet was not sent right away
+	//error
+	if( nrf24l01_irq_max_rt() )
+	{
+		nrf24l01_irq_clear_max_rt();
+	}
+	// sent ok!
+	else
+	{
+		// we can see if package was received by the receiver and then increase the counter.
+		kl_tx_counter++;
+		update_kl_settings_to_eeprom();
+
+		nrf24l01_irq_clear_tx_ds();
+	}
 
 	// back to listening
 	nrf24l01_setRX();
@@ -195,7 +212,7 @@ void process_command(uint8_t *rx_buff) {
 	encrypted |= (uint32_t)(rx_buff[2]) << 16;
 	encrypted |= (uint32_t)(rx_buff[3]) << 24;
 
-	keeloq_decrypt(&encrypted, (uint64_t *)&kl_master_crypt_key);
+	//keeloq_decrypt(&encrypted, (uint64_t *)&kl_master_crypt_key);
 
 	// variable "encrypted" is now "decrypted". we need to verify whether this is a valid data or not.
 	// encryption here does not provide secrecy but only message authenticity. that's all we care about here.
@@ -214,8 +231,8 @@ void process_command(uint8_t *rx_buff) {
 	// 1. sequence must be within the window
 	// 2. command from encrypted portion and plaintext command must match (I know, I know, plaintext attack...)
 	if(
-		next_within_window(enc_rx_counter, kl_rx_counter, 64)
-		&& dec_command == raw_command
+		dec_command == raw_command
+		// && next_within_window(enc_rx_counter, kl_rx_counter, 64)
 	)
 	{
 		kl_rx_counter = enc_rx_counter; // keep track of the sync counter
@@ -287,7 +304,7 @@ void process_command(uint8_t *rx_buff) {
 		else {
 			hacking_attempts_cnt++;
 		}
-		
+
 		// DEBUG
 		setHigh(LED_RED_PORT, LED_RED_PIN);
 		delay_builtin_ms_(500);
@@ -452,7 +469,7 @@ while(1) {
 		rx_buff[5] = command >> 8;
 		memcpy(rx_buff+6, param, 26);
 		process_command(rx_buff);
-		
+
 		delay_builtin_ms_(5000);
 }
 // DEBUG
@@ -498,9 +515,9 @@ while(1) {
 
 			// go to sleep
 			sleep_mode(); // zzzZZZzzzZZZzzzZZZzzz
-			
+
 			// WOKEN UP!
-			
+
 			#ifdef DEBUG
 			setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
 			delay_builtin_ms_(50);
@@ -513,6 +530,9 @@ while(1) {
 
 		// did charge event happen?
 		if(charge_event) {
+
+			// NOTE: THIS HAS BEEN DISABLED IN MCU INITIALIZATION
+			// THIS EVENT WILL NEVER HAPPEN
 
 			// charging
 			if( !(BATT_CHRG_PINREG & _BV(BATT_CHRG_PIN)) ) {
@@ -537,7 +557,7 @@ while(1) {
 				while( !( nrf24l01_readregister(NRF24L01_REG_FIFO_STATUS) & NRF24L01_REG_RX_EMPTY) )
 				{
 					uint8_t rx_buff[32];
-					
+
 					nrf24l01_read(rx_buff);
 					nrf24l01_irq_clear_rx_dr();
 
@@ -564,6 +584,7 @@ while(1) {
 				else {
 					//set_rtc_speed(1); // 8-sec RTC
 				}
+				
 				telemetry_timer_min = TELEMETRY_MINUTES; // reload for next time
 			}
 
@@ -584,8 +605,11 @@ void misc_hw_init() {
 	// Battery charging indicator
 	setInput(BATT_CHRG_DDR, BATT_CHRG_PIN);
 	BATT_CHRG_PORT |= _BV(BATT_CHRG_PIN); 							// turn ON internal pullup
-	BATT_CHRG_PCMSKREG |= _BV(BATT_CHRG_PCINTBIT); 					// set (un-mask) PCINTn pin for interrupt on change
-	PCICR |= _BV(BATT_CHRG_PCICRBIT); 								// enable wanted PCICR
+
+	// with certain PV voltages, booster fails to produce enough current for charger
+	// so the charger keeps restarting and wakes up the AVR constantly - abandoning this option!
+//	BATT_CHRG_PCMSKREG |= _BV(BATT_CHRG_PCINTBIT); 					// set (un-mask) PCINTn pin for interrupt on change
+//	PCICR |= _BV(BATT_CHRG_PCICRBIT); 								// enable wanted PCICR
 
 	// Temp. sensor shutdown pin
 	setOutput(TEMP_SHUT_DDR, TEMP_SHUT_PIN);
@@ -831,7 +855,7 @@ uint8_t isleapyear(uint16_t y)
 }
 
 // reads average ADC value
-double read_adc_mv(uint8_t admux_val, uint32_t Rup, uint32_t Rdn, uint8_t how_many)
+double read_adc_mv(uint8_t admux_val, double Rup, double Rdn, uint8_t how_many)
 {
 	uint64_t volt_sum = 0;
 
@@ -861,15 +885,15 @@ double read_adc_mv(uint8_t admux_val, uint32_t Rup, uint32_t Rdn, uint8_t how_ma
 	volt_sum /= how_many;
 
 	// convert from 0..1023 to 0..Vref
-	double adc_voltage = (4962.0f / 1024.0f) * (double)volt_sum;
+	double adc_voltage = (3300.0f / 1024.0f) * (double)volt_sum;
 
 	// no voltage divider connected
-	if(Rup == 0 && Rdn == 0) {
+	if(Rdn == 0) {
 		return adc_voltage;
 	}
 
 	// +voltage divider (if any)
-	return adc_voltage * Rdn / (Rup + Rdn);
+	return (adc_voltage * ((Rup + Rdn)/Rdn));
 }
 
 // this looks stupid
