@@ -81,9 +81,11 @@ void send_telemetry() {
 
 	uint16_t charging_time_min = charging_time_sec / 60;
 	if(charging_time_min > 999) charging_time_min = 999;
+	
+	if(hacking_attempts_cnt >= 100) hacking_attempts_cnt = 99; // we dont have space in param to have 3 digits here
 
 	uint8_t param[26];
-	sprintf((char *)param, "%c#%.1f#%.1f#%.1f#%.0f#%d#%d#$", charging_or_not, solar_volt/1000.0, boost_volt/1000.0, batt_volt/1000.0, temperature, hacking_attempts_cnt, charging_time_min);
+	sprintf((char *)param, "%c#%.1f#%.1f#%.2f#%.0f#%d#%d#$", charging_or_not, solar_volt/1000.0, boost_volt/1000.0, batt_volt/1000.0, temperature, hacking_attempts_cnt, charging_time_min);
 
 	send_command(RF_CMD_TELEDATA, param, 26);
 
@@ -140,7 +142,7 @@ void police_on(uint8_t times) {
 
 	police_lights_stage = 0;
 	police_lights_stage_on_timer = 0;
-	police_lights_stage_counter = POLICE_LIGHTS_STAGE_COUNT;
+	police_lights_stage_counter = POLICE_LIGHTS_STAGE_COUNT*2;
 
 	police_lights_count = times; // start it
 }
@@ -793,7 +795,7 @@ ISR(TIMER0_OVF_vect, ISR_NOBLOCK)
 				}
 
 				police_lights_stage = !police_lights_stage; // change it
-				police_lights_stage_counter = POLICE_LIGHTS_STAGE_COUNT; // reload counter
+				police_lights_stage_counter = POLICE_LIGHTS_STAGE_COUNT*2; // reload counter
 			}
 
 			// toggle the pin according to the current stage, if there is more to do
