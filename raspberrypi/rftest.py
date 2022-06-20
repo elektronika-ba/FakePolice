@@ -6,6 +6,14 @@ import time
 from os.path import exists
 import leekoq
 
+RF_CMD_ABORT                = 0x2496  # aborts current command
+RF_CMD_POLICE               = 0x7683  # police lights
+RF_CMD_CAMERA               = 0x5628  # speed camera flash
+RF_CMD_SETRTC               = 0x5519  # set RTC
+RF_CMD_GETTELE              = 0x6087  # request for telemetry data
+RF_CMD_TELEDATA             = 0x7806  # telemetry data packet (we send this)
+RF_CMD_NEWKEY               = 0x4706  # keeloq key change
+
 def build_header(command, counter):
     header = command << 16
     header = header + counter
@@ -46,7 +54,7 @@ while True:
 
     # test 1
     # request telemetry data
-    command = 0x6087
+    command = RF_CMD_GETTELE
     rf_packet = bytearray()
     # rf_packet = rf_packet + tx_counter.to_bytes(2, sys.byteorder)
     # rf_packet = rf_packet + command.to_bytes(2, sys.byteorder)
@@ -91,7 +99,7 @@ while True:
 
     # test 2
     # police lights
-    command = 0x7683
+    command = RF_CMD_POLICE
     rf_packet = bytearray()
     # rf_packet = rf_packet + tx_counter.to_bytes(2, sys.byteorder) # bajgi counter, debugging
     # rf_packet = rf_packet + 0x7683.to_bytes(2, sys.byteorder)
