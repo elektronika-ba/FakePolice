@@ -41,12 +41,11 @@
 #define	DEFAULT_RF_CHANNEL			14		// this is system's default RF channel
 
 #define LOWEST_SOLVOLT_GOOD			2500	// mV required at solar panel in order to send the timed-telemetry
-#define LOWEST_BATT_VOLT_MV			3600	// mV lowest battery voltage allowed for blinking the LEDs. below this voltage telemetry stops and device will not blink LEDs anymore
 
 #define POLICE_LIGHTS_STAGE_COUNT	4		// keep then event! how many times should one color blink before switching to other color
 #define POLICE_LIGHTS_STAGE_ON_8MS	5		// delay&on-time between blinks/toggles of the LED ... in 8ms steps!!!
 
-#define TELEMETRY_MINUTES			3		// on every X minutes send telemetry data to "home"
+#define TELEMETRY_MINUTES			30		// on every X minutes send telemetry data to "home"
 
 // RF Commands (just random values known to both sides)
 #define RF_CMD_ABORT				0x2496	// aborts current command

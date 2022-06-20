@@ -214,7 +214,7 @@ void process_command(uint8_t *rx_buff) {
 	encrypted |= (uint32_t)(rx_buff[2]) << 16;
 	encrypted |= (uint32_t)(rx_buff[3]) << 24;
 
-	//keeloq_decrypt(&encrypted, (uint64_t *)&kl_master_crypt_key);
+	keeloq_decrypt(&encrypted, (uint64_t *)&kl_master_crypt_key);
 
 	// variable "encrypted" is now "decrypted". we need to verify whether this is a valid data or not.
 	// encryption here does not provide secrecy but only message authenticity. that's all we care about here.
@@ -234,7 +234,7 @@ void process_command(uint8_t *rx_buff) {
 	// 2. command from encrypted portion and plaintext command must match (I know, I know, plaintext attack...)
 	if(
 		dec_command == raw_command
-		// && next_within_window(enc_rx_counter, kl_rx_counter, 64)
+		&& next_within_window(enc_rx_counter, kl_rx_counter, 64)
 	)
 	{
 		kl_rx_counter = enc_rx_counter; // keep track of the sync counter
