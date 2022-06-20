@@ -8,7 +8,7 @@
 #ifndef MAIN_H_
 #define MAIN_H_
 
-#define DEBUG 1
+//#define DEBUGZ 1
 
 #define DEFAULT_KEELOQ_CRYPT_KEY 	0x1223344556788990 // chose a default secret code for yourself, or leave this one as it will change during operation
 #define DEFAULT_KEELOQ_COUNTER		1000 // also...

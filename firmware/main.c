@@ -308,9 +308,11 @@ void process_command(uint8_t *rx_buff) {
 		}
 
 		// DEBUG
+		#ifdef DEBUGZ
 		setHigh(LED_RED_PORT, LED_RED_PIN);
 		delay_builtin_ms_(500);
 		setLow(LED_RED_PORT, LED_RED_PIN);
+		#endif
 	}
 
 }
@@ -430,7 +432,7 @@ int main(void)
 	delay_builtin_ms_(50);
 
 	// DEBUGGING
-	#ifdef DEBUG
+	#ifdef DEBUGZ
 	for(uint8_t i=0; i<3; i++) {
 		setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
 		setHigh(LED_RED_PORT, LED_RED_PIN);
@@ -445,38 +447,6 @@ int main(void)
 	// I figured that there is no point in waking up every 1s
 	// so I am fixing it to 8 sec wakeup interval
 	set_rtc_speed(1); // 8-sec RTC
-
-/*
-// DEBUG
-uint16_t kkk = kl_rx_counter + 100;
-while(1) {
-		// RF PACKET 	  {[ROLLING ACCESS CODE 4 bytes][COMMAND 2 bytes][PARAM N bytes]}
-		// 	[first addr 0]{																}[last addr 31]
-
-		// ROLLING ACCESS CODE 4 bytes IS: {[COUNTER LSB][COUNTER MSB][COMMAND LSB][COMMAND MSB]}
-		//						   [addr 0]{													}[addr 3]
-		uint8_t param[26];
-		uint8_t rx_buff[32];
-
-		uint16_t command = RF_CMD_POLICE;
-		param[0] = 2;
-
-		kkk++;
-
-		rx_buff[0] = kkk;
-		rx_buff[1] = kkk >> 8;
-		rx_buff[2] = command;
-		rx_buff[3] = command >> 8;
-		rx_buff[4] = command;
-		rx_buff[5] = command >> 8;
-		memcpy(rx_buff+6, param, 26);
-		process_command(rx_buff);
-
-		delay_builtin_ms_(5000);
-}
-// DEBUG
-*/
-
 
 	// main program
 	while(1) {
@@ -505,7 +475,7 @@ while(1) {
 			setLow(LED_RED_PORT, LED_RED_PIN);
 			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
 
-			#ifdef DEBUG
+			#ifdef DEBUGZ
 			setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
 			delay_builtin_ms_(50);
 			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
@@ -520,7 +490,7 @@ while(1) {
 
 			// WOKEN UP!
 
-			#ifdef DEBUG
+			#ifdef DEBUGZ
 			setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
 			delay_builtin_ms_(50);
 			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
