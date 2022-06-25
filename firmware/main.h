@@ -29,25 +29,31 @@
 #define calc_TWI(khz)				(((F_CPU/khz) - 16)/2)
 
 // EEPROM addresses
-#define	EEPROM_START				(0)									// start of our data in eeprom is here
-#define EEPROM_MAGIC				(EEPROM_START + 0)					// eeprom OK - magic value
-#define EEPROM_MASTER_CRYPT_KEY		(EEPROM_MAGIC + 1)					// master crypt key address
-#define EEPROM_RX_COUNTER			(EEPROM_MASTER_CRYPT_KEY + 8)		// keeloq counter for receiving data
-#define EEPROM_TX_COUNTER			(EEPROM_RX_COUNTER + 2)				// keeloq counter for sending data
-
 #define EEPROM_MAGIC_VALUE			0xAA
-//
+
+#define	EEPROM_START				(0)									// start of our data in eeprom is here
+#define EEPROM_MAGIC				(EEPROM_START + 0)					// 1 byte, eeprom OK - magic value
+#define EEPROM_MASTER_CRYPT_KEY		(EEPROM_MAGIC + 1)					// 8 bytes, master crypt key address
+#define EEPROM_RX_COUNTER			(EEPROM_MASTER_CRYPT_KEY + 8)		// 2 bytes, keeloq counter for receiving data
+#define EEPROM_TX_COUNTER			(EEPROM_RX_COUNTER + 2)				// 2 bytes, keeloq counter for sending data
+#define EEPROM_RADIO_WAKEUPER		(EEPROM_TX_COUNTER + 2)				// 1 byte, radio checker timer
+#define EEPROM_RADIO_LISTEN_LONG	(EEPROM_RADIO_WAKEUPER + 1)			// 2 bytes, long timer before putting radio back to sleep (used for RF RX activity)
+#define EEPROM_RADIO_LISTEN_SHORT	(EEPROM_RADIO_LISTEN_LONG + 2)		// 1 byte, short timer before putting radio back to sleep (used when no RF RX activity)
 
 #define	DEFAULT_RF_CHANNEL			14		// this is system's default RF channel
 
-#define LOWEST_SOLVOLT_GOOD			2500	// mV required at solar panel in order to send the timed-telemetry
+#define TELEMETRY_MINUTES			30		// on every X minutes send telemetry data to "home"
+#define LOWEST_SOLVOLT_GOOD			3000	// mV required at solar panel in order to send the timed-telemetry on every TELEMETRY_MINUTES
 
 #define POLICE_LIGHTS_STAGE_COUNT	4		// keep then event! how many times should one color blink before switching to other color
 #define POLICE_LIGHTS_STAGE_ON_8MS	5		// delay&on-time between blinks/toggles of the LED ... in 8ms steps!!!
 
-#define TELEMETRY_MINUTES			30		// on every X minutes send telemetry data to "home"
+#define DEFAULT_RADIO_WAKEUPER_SEC			4		// radio waking up every this many seconds
+#define DEFAULT_RADIO_LISTEN_SHORT_SEC		1		// listening for this many seconds
+#define DEFAULT_RADIO_LISTEN_LONG_SEC		120		// after how many seconds of radio RX inactivity should we put radio back to sleep
 
 // RF Commands (just random values known to both sides)
+#define RF_CMD_SLEEP				0x9075	// goes to sleep mode. any other command wakes us up
 #define RF_CMD_ABORT				0x2496	// aborts current command
 #define RF_CMD_POLICE				0x7683	// police lights
 #define RF_CMD_CAMERA				0x5628	// speed camera flash
@@ -55,6 +61,7 @@
 #define RF_CMD_GETTELE				0x6087	// request for telemetry data
 #define RF_CMD_TELEDATA				0x7806	// telemetry data packet (we send this)
 #define RF_CMD_NEWKEY				0x4706	// keeloq key change
+#define RF_CMD_SETRADIOTMRS			0x3366	// set long & short inactivity sleep intervals, and wakeuper interval
 
 // ADC pins
 
@@ -162,7 +169,6 @@ extern uint8_t isleapyear(uint16_t); // calculate if given year is leap year
 extern uint8_t next_within_window(uint16_t, uint16_t, uint16_t);
 extern double read_adc_mv(uint8_t admux_val, double Rup, double Rdn, uint8_t how_many);
 extern void send_telemetry();
-extern void set_rtc_speed(uint8_t slow);
 extern double read_temperature();
 extern double read_solar_volt();
 extern double read_boost_volt();
@@ -173,7 +179,6 @@ extern void send_command(uint16_t command, uint8_t *param, uint8_t param_len);
 extern void process_command(uint8_t *rx_buff);
 extern void speed_camera();
 extern void police_inline(uint8_t times);
-extern void update_kl_settings_to_eeprom();
-
+extern void update_settings_to_eeprom();
 
 #endif /* MAIN_H_ */

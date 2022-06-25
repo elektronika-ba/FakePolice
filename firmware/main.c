@@ -26,13 +26,24 @@
 #include "keeloq_crypt.h" // yes, believe it or not :)
 
 // misc
-volatile uint8_t charge_event = 0;
 volatile uint8_t radio_event = 0;
 volatile uint8_t rtc_event = 0;
 volatile uint32_t charging_time_sec = 0;
 volatile uint8_t rtc_ok = 0; // set to 1 when we receive SETRTC command and process it
-
 volatile uint8_t hacking_attempts_cnt = 0;
+
+// radio sleep stuff
+volatile uint8_t radio_sleeping = 0; // state of the radio
+
+// timer for putting radio to sleep
+volatile uint16_t tmr_radio_sleeper = 0; // timer
+// settings for how long radio can remain ON - two values (short listening time, and long listening time because there was RF RX activity)
+volatile uint8_t radio_listen_short_sec = 0; // setting for small listening time (there was no RF activity)
+volatile uint16_t radio_listen_long_sec = 0; // setting for longer listening time (there is RF activity)
+
+// timer for waking radio up
+volatile uint8_t tmr_radio_wakeuper = 0; // timer
+volatile uint8_t radio_wakeuper_sec = 0; // setting
 
 // police light blinker
 volatile uint8_t police_lights_count = 0;
@@ -52,7 +63,6 @@ volatile uint64_t kl_master_crypt_key;
 // RTC
 volatile uint8_t RTC[7] = {22, 6, 9, 12, 0, 0, 4};			// YY MM DD HH MM SS WEEKDAY(1-MON...7-SUN)
 volatile uint8_t bools[BOOL_BANK_SIZE] = { 0, 0 }; 				// 8 global boolean values per BOOL_BANK_SIZE
-volatile uint8_t rtc_slow_mode = 0;
 volatile uint64_t seconds_counter = 0;
 volatile uint8_t rtc_busy = 0;
 
@@ -68,7 +78,7 @@ void send_telemetry() {
 
 	// pripremi paket i salji, imam 26 bajta ukupno za ovo
 	// C5.3#5.2#4.1#-17#HHH#TTT
-	// 		C=charging, N=not charging
+	// 		C=charging, N=not charging --- this is not accurate, but we will leave it available
 	// 		5.3=solar voltage
 	//		5.2=booster voltage
 	//		4.1=battery voltage
@@ -90,19 +100,6 @@ void send_telemetry() {
 	send_command(RF_CMD_TELEDATA, param, 26);
 
 	hacking_attempts_cnt = 0; // we can clear this one now
-}
-
-void set_rtc_speed(uint8_t slow) {
-	rtc_slow_mode = slow;
-
-	// set prescaller 1024 .. 8second interrupt
-	if(slow) {
-		TCCR2B |= (1<<CS21);
-	}
-	// set prescaller to 128 .. 1second interrupt
-	else {
-		TCCR2B &= ~(1<<CS21);
-	}
 }
 
 double read_temperature() {
@@ -191,13 +188,18 @@ void send_command(uint16_t command, uint8_t *param, uint8_t param_len) {
 	{
 		// we can see if package was received by the receiver and then increase the counter.
 		kl_tx_counter++;
-		update_kl_settings_to_eeprom();
+		update_settings_to_eeprom();
 
 		nrf24l01_irq_clear_tx_ds();
 	}
 
 	// back to listening
 	nrf24l01_setRX();
+	
+	// if radio was sleeping, put it back to sleep because we messed it up by transmitting and reverting back to RX mode
+	if(radio_sleeping) {
+		nrf24l01_ce_low();
+	}
 }
 
 void process_command(uint8_t *rx_buff) {
@@ -239,7 +241,7 @@ void process_command(uint8_t *rx_buff) {
 	{
 		kl_rx_counter = enc_rx_counter; // keep track of the sync counter
 		kl_rx_counter_resync = enc_rx_counter; // follow this one always
-		update_kl_settings_to_eeprom(); // save (everything every time)
+		update_settings_to_eeprom(); // save (everything every time)
 
 		// optional parameter pointer
 		uint8_t *param = rx_buff + 6; // processed 6 bytes so far, so skip them. (Note: we are left with 32-6 = 26 for the parameter. 32 because nRF24L01 packet is 32 bytes long max)
@@ -259,6 +261,28 @@ void process_command(uint8_t *rx_buff) {
 			case RF_CMD_CAMERA:
 				speed_camera();
 			break;
+			
+			case RF_CMD_SLEEP:
+				tmr_radio_sleeper = 0; // go to radio sleep ASAP
+				radio_sleeping = 0;
+			break;
+
+			case RF_CMD_SETRADIOTMRS:
+			{
+				uint8_t *tmp_ptr = param;
+				// mind the byteorder
+				memcpy((uint16_t *)&radio_listen_long_sec, tmp_ptr, 2);
+				tmp_ptr+=2;
+				
+				memcpy((uint8_t *)&radio_listen_short_sec, tmp_ptr, 1);
+				tmp_ptr++;
+				
+				memcpy((uint8_t *)&radio_wakeuper_sec, tmp_ptr, 1);
+				// tmp_ptr++;
+
+				update_settings_to_eeprom();
+			}
+			break;
 
 			case RF_CMD_SETRTC:
 			{
@@ -269,7 +293,7 @@ void process_command(uint8_t *rx_buff) {
 				// get RTC from param 7 bytes - mind the byteorder
 				memcpy((uint8_t *)&RTC, param, 7);
 
-				set_rtc_speed(rtc_slow_mode); // resume RTC
+				TCCR2B |= (1<<CS22)|(1<<CS00); // resume RTC...
 
 				rtc_ok = 1;
 			}
@@ -280,7 +304,7 @@ void process_command(uint8_t *rx_buff) {
 				// get new key from param 8 bytes - mind the byteorder
 				memcpy((uint8_t *)&kl_master_crypt_key, param, 8);
 
-				update_kl_settings_to_eeprom();
+				update_settings_to_eeprom();
 			}
 			break;
 
@@ -293,6 +317,8 @@ void process_command(uint8_t *rx_buff) {
 				// wtf
 			}
 		}
+
+		tmr_radio_sleeper = radio_listen_long_sec; // reload timer for going to radio sleep, use the long one since we are actively communicating now
 	}
 	else {
 		// maybe it is within the larger re-sync window?
@@ -302,6 +328,8 @@ void process_command(uint8_t *rx_buff) {
 				kl_rx_counter = enc_rx_counter;
 			}
 			kl_rx_counter_resync = enc_rx_counter;
+
+			tmr_radio_sleeper = radio_listen_long_sec; // reload timer for going to radio sleep, use the long one since we are actively communicating now
 		}
 		else {
 			hacking_attempts_cnt++;
@@ -354,7 +382,7 @@ void police_inline(uint8_t times) {
 	}
 }
 
-void update_kl_settings_to_eeprom() {
+void update_settings_to_eeprom() {
 	// save all working stuff to eeprom, and mark if VALID
 
 	// MASTER CRYPT-KEY
@@ -363,6 +391,10 @@ void update_kl_settings_to_eeprom() {
 	// COUNTERS
 	eeprom_update_word((uint16_t *)EEPROM_RX_COUNTER, kl_rx_counter);
 	eeprom_update_word((uint16_t *)EEPROM_TX_COUNTER, kl_tx_counter);
+
+	eeprom_update_byte((uint8_t *)EEPROM_RADIO_WAKEUPER, radio_wakeuper_sec);
+	eeprom_update_word((uint16_t *)EEPROM_RADIO_LISTEN_LONG, radio_listen_long_sec);
+	eeprom_update_byte((uint8_t *)EEPROM_RADIO_LISTEN_SHORT, radio_listen_short_sec);
 
 	// say eeprom is valid
 	eeprom_update_byte((uint8_t *)EEPROM_MAGIC, EEPROM_MAGIC_VALUE);
@@ -379,12 +411,17 @@ int main(void)
 	setOutput(DDRD, 1);
 	uart_init(calc_UBRR(19200));
 
-	// read KEELOQ stuff from EEPROM
+	// read settings stuff from EEPROM
 	// eeprom has some settings?
     if( eeprom_read_byte((uint8_t *)EEPROM_MAGIC) == EEPROM_MAGIC_VALUE) {
 		eeprom_read_block((uint64_t *)&kl_master_crypt_key, (uint8_t *)EEPROM_MASTER_CRYPT_KEY, 8);
 		kl_rx_counter = eeprom_read_word((uint16_t *)EEPROM_RX_COUNTER);
 		kl_tx_counter = eeprom_read_word((uint16_t *)EEPROM_TX_COUNTER);
+
+		radio_wakeuper_sec = eeprom_read_byte((uint8_t *)EEPROM_RADIO_WAKEUPER);
+		radio_listen_long_sec = eeprom_read_word((uint16_t *)EEPROM_RADIO_LISTEN_LONG);
+		radio_listen_short_sec = eeprom_read_byte((uint8_t *)EEPROM_RADIO_LISTEN_SHORT);
+		
 	}
 	// nope, use defaults
 	else {
@@ -392,7 +429,11 @@ int main(void)
 		kl_rx_counter = DEFAULT_KEELOQ_COUNTER;
 		kl_tx_counter = DEFAULT_KEELOQ_COUNTER;
 
-		update_kl_settings_to_eeprom();
+		radio_wakeuper_sec = DEFAULT_RADIO_WAKEUPER_SEC;
+		radio_listen_long_sec = DEFAULT_RADIO_LISTEN_LONG_SEC;
+		radio_listen_short_sec = DEFAULT_RADIO_LISTEN_SHORT_SEC;
+
+		update_settings_to_eeprom();
 	}
 	kl_rx_counter_resync = kl_rx_counter; // follow
 
@@ -409,7 +450,11 @@ int main(void)
 	nrf24l01_init(DEFAULT_RF_CHANNEL);
 	nrf24l01_setrxaddr0(my_rx_addr);
 	nrf24l01_settxaddr(my_rx_addr);
-	nrf24l01_setRX();
+	nrf24l01_setRX(); // listening by default
+
+	// configure timer to put radio to sleep ASAP
+	tmr_radio_sleeper = 0;
+	radio_sleeping = 0;
 
 	// Initialize Timer0 overflow ISR for 8.192ms interval, no need to go faster
 	TCCR0A = 0;
@@ -444,18 +489,13 @@ int main(void)
 	delay_builtin_ms_(200);
 	#endif
 
-	// I figured that there is no point in waking up every 1s
-	// so I am fixing it to 8 sec wakeup interval
-	set_rtc_speed(1); // 8-sec RTC
-
 	// main program
 	while(1) {
 		/*
 		1. configure sleep mode
 		// we can be woken up by:
-		- Battery charge indicator
 		- IRQ from nRF radio
-		- Timer2
+		- Timer2, 1 second interval
 
 		2. sleep
 
@@ -465,7 +505,6 @@ int main(void)
 
 		4. check what woke us up
 		- Timer2 = send telemetry and go back to 1.
-		- Battery charge indicator = send telemetry and go back to 1.
 		- IRQ from nRF radio = process command and go back to 1.
 		*/
 
@@ -500,26 +539,6 @@ int main(void)
 
 		// (some interrupt happens) and we get into the ISR() of it... after it finishes, we continue here:
 
-		// did charge event happen?
-		if(charge_event) {
-
-			// NOTE: THIS HAS BEEN DISABLED IN MCU INITIALIZATION
-			// THIS EVENT WILL NEVER HAPPEN
-
-			// charging
-			if( !(BATT_CHRG_PINREG & _BV(BATT_CHRG_PIN)) ) {
-				//set_rtc_speed(0); // 1-sec RTC
-			}
-			// not charging (anymore)
-			else {
-				charging_time_sec = 0;
-			}
-
-			send_telemetry();
-
-			charge_event = 0;  // handled
-		}
-
 		// did radio packet arrive?
 		if(radio_event) {
 
@@ -544,8 +563,10 @@ int main(void)
 		if(rtc_event) {
 
 			/*setHigh(LED_RED_PORT, LED_RED_PIN);
-			delay_builtin_ms_(60);
-			setLow(LED_RED_PORT, LED_RED_PIN);*/
+			setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
+			delay_builtin_ms_(35);
+			setLow(LED_RED_PORT, LED_RED_PIN);
+			setLow(LED_BLUE_PORT, LED_BLUE_PIN);*/
 
 			// send telemetry if it is time and if solar voltage is good
 			if(!telemetry_timer_min) {
@@ -559,6 +580,31 @@ int main(void)
 				
 				telemetry_timer_min = TELEMETRY_MINUTES; // reload for next time
 			}
+			
+			// time to put radio to sleep, if radio not sleeping already?
+			if(!tmr_radio_sleeper && !radio_sleeping) {
+				nrf24l01_ce_low(); // stop radio listening
+				radio_sleeping = 1;
+
+/*setLow(LED_RED_PORT, LED_RED_PIN);
+setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
+delay_builtin_ms_(200);*/
+				
+				tmr_radio_wakeuper = radio_wakeuper_sec; // reload the timer for radio wakeup
+			}
+			
+			// time to turn the radio ON, if radio is sleeping?
+			if(!tmr_radio_wakeuper && radio_sleeping) {
+				nrf24l01_ce_high(); // re-start radio listening
+				radio_sleeping = 0;
+
+/*setHigh(LED_RED_PORT, LED_RED_PIN);
+setLow(LED_BLUE_PORT, LED_BLUE_PIN);
+delay_builtin_ms_(200);*/
+
+				// set the sleeper to listen for "radio_listening_sec" and then go to sleep
+				tmr_radio_sleeper = radio_listen_short_sec; // use short timer, this one is for expecting some RF command
+			}			
 
 			rtc_event = 0; // handled
 		}
@@ -580,6 +626,7 @@ void misc_hw_init() {
 
 	// with certain PV voltages, booster fails to produce enough current for charger
 	// so the charger keeps restarting and wakes up the AVR constantly - abandoning this option!
+	// I also commented out the ISR handler for this
 //	BATT_CHRG_PCMSKREG |= _BV(BATT_CHRG_PCINTBIT); 					// set (un-mask) PCINTn pin for interrupt on change
 //	PCICR |= _BV(BATT_CHRG_PCICRBIT); 								// enable wanted PCICR
 
@@ -633,40 +680,22 @@ ISR(TIMER2_OVF_vect, ISR_NOBLOCK)
 
 	rtc_event = 1;
 
-	uint8_t sec_step = 1;
+	// TODO: do something every second?
+	if(tmr_radio_wakeuper) tmr_radio_wakeuper--;
+	if(tmr_radio_sleeper) tmr_radio_sleeper--; // for keeping the radio ON
+	seconds_counter++; // seconds ticker, for global use
 
-	// RTC is normal, 1 second interval
-	if(!rtc_slow_mode) {
-
-		// TODO: do something every second?
-	}
-	// RTC advances on each 8 seconds
-	else {
-		sec_step = 8;
-
-		// TODO: do something every 8 seconds?
-	}
-
-	RTC[TIME_S] += sec_step;
-	seconds_counter += sec_step; // seconds ticker, for global use
-
-	// measure charge time
+	// accumulate charging time
 	if( !(BATT_CHRG_PINREG & _BV(BATT_CHRG_PIN)) ) {
-		charging_time_sec += sec_step;
+		charging_time_sec++;
 	}
+
+	RTC[TIME_S]++;
 
 	// a minute!
 	if(RTC[TIME_S] >= 60)
 	{
-		// correction if in slow mode
-		if(rtc_slow_mode) {
-			RTC[TIME_S] = RTC[TIME_S] - 60; // keep remainder!
-		}
-		// normal
-		else {
-			RTC[TIME_S] = 0;
-		}
-
+		RTC[TIME_S] = 0;
 		RTC[TIME_M]++;
 
 		// TODO: do something every minute?
@@ -808,6 +837,7 @@ ISR(PCINT0_vect, ISR_NOBLOCK) {
 	PCICR |= _BV(PCIE0); 								// ..re-enable interrupts for the entire section
 }
 
+/*
 // Interrupt: pin change interrupt
 // This one is connected to Li+ battery charger CHARGE indicator
 ISR(PCINT1_vect, ISR_NOBLOCK) {
@@ -819,6 +849,7 @@ ISR(PCINT1_vect, ISR_NOBLOCK) {
 
 	PCICR |= _BV(PCIE1); 								// ..re-enable interrupts for the entire section
 }
+*/
 
 // calculate if given year is leap year
 uint8_t isleapyear(uint16_t y)

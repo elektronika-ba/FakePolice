@@ -365,3 +365,19 @@ void nrf24l01_irq_clear_max_rt()
 {
 	nrf24l01_writeregister(NRF24L01_REG_STATUS, NRF24L01_REG_MAX_RT);
 }
+
+void nrf24l01_powerdown()
+{
+	nrf24l01_ce_low(); // stop listening
+
+	//power down
+	nrf24l01_writeregister(NRF24L01_REG_CONFIG, nrf24l01_readregister(NRF24L01_REG_CONFIG) & ~(1<<NRF24L01_REG_PWR_UP));
+}
+
+void nrf24l01_powerup()
+{
+	//power down
+	nrf24l01_writeregister(NRF24L01_REG_CONFIG, nrf24l01_readregister(NRF24L01_REG_CONFIG) | (1<<NRF24L01_REG_PWR_UP));
+
+	_delay_ms(2); //wait for the radio to powerup
+}

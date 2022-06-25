@@ -146,5 +146,7 @@ extern void nrf24l01_irq_clear_all();
 extern void nrf24l01_irq_clear_rx_dr();
 extern void nrf24l01_irq_clear_tx_ds();
 extern void nrf24l01_irq_clear_max_rt();
+extern void nrf24l01_powerdown();
+extern void nrf24l01_powerup();
 
 #endif /*NRF24L01_H_*/
