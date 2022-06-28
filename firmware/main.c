@@ -51,6 +51,9 @@ volatile uint8_t police_lights_stage = 0; // red/blue
 volatile uint8_t police_lights_stage_counter = 0; // counting pulsing of red/blue leds
 volatile uint16_t police_lights_stage_on_timer = 0; // timer for tiggle-time of the LED itself
 volatile uint8_t police_lights_busy = 0;
+// settings saved to eeprom, and configurable remotely
+volatile uint8_t police_lights_stage_count = 0;
+volatile uint8_t police_lights_stage_on_8ms = 0;
 
 volatile uint32_t telemetry_timer_min = 0;
 
@@ -91,7 +94,7 @@ void send_telemetry() {
 
 	uint16_t charging_time_min = charging_time_sec / 60;
 	if(charging_time_min > 999) charging_time_min = 999;
-	
+
 	if(hacking_attempts_cnt >= 100) hacking_attempts_cnt = 99; // we dont have space in param to have 3 digits here
 
 	uint8_t param[26];
@@ -139,7 +142,7 @@ void police_on(uint8_t times) {
 
 	police_lights_stage = 0;
 	police_lights_stage_on_timer = 0;
-	police_lights_stage_counter = POLICE_LIGHTS_STAGE_COUNT*2;
+	police_lights_stage_counter = police_lights_stage_count * 2;
 
 	police_lights_count = times; // start it
 }
@@ -195,7 +198,7 @@ void send_command(uint16_t command, uint8_t *param, uint8_t param_len) {
 
 	// back to listening
 	nrf24l01_setRX();
-	
+
 	// if radio was sleeping, put it back to sleep because we messed it up by transmitting and reverting back to RX mode
 	if(radio_sleeping) {
 		nrf24l01_ce_low();
@@ -261,7 +264,14 @@ void process_command(uint8_t *rx_buff) {
 			case RF_CMD_CAMERA:
 				speed_camera();
 			break;
-			
+
+			case RF_CMD_CONFIGPOLICE:
+				police_lights_stage_count = param[0];
+				police_lights_stage_on_8ms = param[1];
+
+				update_settings_to_eeprom();
+			break;
+
 			case RF_CMD_SLEEP:
 				tmr_radio_sleeper = 0; // go to radio sleep ASAP
 				radio_sleeping = 0;
@@ -273,10 +283,10 @@ void process_command(uint8_t *rx_buff) {
 				// mind the byteorder
 				memcpy((uint16_t *)&radio_listen_long_sec, tmp_ptr, 2);
 				tmp_ptr+=2;
-				
+
 				memcpy((uint8_t *)&radio_listen_short_sec, tmp_ptr, 1);
 				tmp_ptr++;
-				
+
 				memcpy((uint8_t *)&radio_wakeuper_sec, tmp_ptr, 1);
 				// tmp_ptr++;
 
@@ -366,18 +376,18 @@ void speed_camera()	 {
 // simulates police lights without ISR usage
 void police_inline(uint8_t times) {
 	for(uint8_t i=0; i<times; i++) {
-		for(uint8_t j=0; j<POLICE_LIGHTS_STAGE_COUNT; j++)	{
+		for(uint8_t j=0; j<police_lights_stage_count; j++)	{
 			setHigh(LED_RED_PORT, LED_RED_PIN);
-			delay_builtin_ms_(POLICE_LIGHTS_STAGE_ON_8MS*8);
+			delay_builtin_ms_(police_lights_stage_on_8ms * 8);
 			setLow(LED_RED_PORT, LED_RED_PIN);
-			delay_builtin_ms_(POLICE_LIGHTS_STAGE_ON_8MS*8);
+			delay_builtin_ms_(police_lights_stage_on_8ms * 8);
 		}
 
-		for(uint8_t j=0; j<POLICE_LIGHTS_STAGE_COUNT; j++)	{
+		for(uint8_t j=0; j<police_lights_stage_count; j++)	{
 			setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
-			delay_builtin_ms_(POLICE_LIGHTS_STAGE_ON_8MS*8);
+			delay_builtin_ms_(police_lights_stage_on_8ms * 8);
 			setLow(LED_BLUE_PORT, LED_BLUE_PIN);
-			delay_builtin_ms_(POLICE_LIGHTS_STAGE_ON_8MS*8);
+			delay_builtin_ms_(police_lights_stage_on_8ms * 8);
 		}
 	}
 }
@@ -395,6 +405,9 @@ void update_settings_to_eeprom() {
 	eeprom_update_byte((uint8_t *)EEPROM_RADIO_WAKEUPER, radio_wakeuper_sec);
 	eeprom_update_word((uint16_t *)EEPROM_RADIO_LISTEN_LONG, radio_listen_long_sec);
 	eeprom_update_byte((uint8_t *)EEPROM_RADIO_LISTEN_SHORT, radio_listen_short_sec);
+
+	eeprom_update_byte((uint8_t *)EEPROM_POLICE_L_STAGE_CNT, police_lights_stage_count);
+	eeprom_update_byte((uint8_t *)EEPROM_POLICE_L_STAGE_8MS, police_lights_stage_on_8ms);
 
 	// say eeprom is valid
 	eeprom_update_byte((uint8_t *)EEPROM_MAGIC, EEPROM_MAGIC_VALUE);
@@ -421,7 +434,9 @@ int main(void)
 		radio_wakeuper_sec = eeprom_read_byte((uint8_t *)EEPROM_RADIO_WAKEUPER);
 		radio_listen_long_sec = eeprom_read_word((uint16_t *)EEPROM_RADIO_LISTEN_LONG);
 		radio_listen_short_sec = eeprom_read_byte((uint8_t *)EEPROM_RADIO_LISTEN_SHORT);
-		
+
+		police_lights_stage_count = eeprom_read_byte((uint8_t *)EEPROM_POLICE_L_STAGE_CNT);
+		police_lights_stage_on_8ms = eeprom_read_byte((uint8_t *)EEPROM_POLICE_L_STAGE_8MS);
 	}
 	// nope, use defaults
 	else {
@@ -432,6 +447,9 @@ int main(void)
 		radio_wakeuper_sec = DEFAULT_RADIO_WAKEUPER_SEC;
 		radio_listen_long_sec = DEFAULT_RADIO_LISTEN_LONG_SEC;
 		radio_listen_short_sec = DEFAULT_RADIO_LISTEN_SHORT_SEC;
+
+		police_lights_stage_count = DEFAULT_POLICE_LIGHTS_STAGE_COUNT;
+		police_lights_stage_on_8ms = DEFAULT_POLICE_LIGHTS_STAGE_ON_8MS;
 
 		update_settings_to_eeprom();
 	}
@@ -562,12 +580,6 @@ int main(void)
 		// RTC has woken us up? every 1 or 8 seconds depending on situation
 		if(rtc_event) {
 
-			/*setHigh(LED_RED_PORT, LED_RED_PIN);
-			setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
-			delay_builtin_ms_(35);
-			setLow(LED_RED_PORT, LED_RED_PIN);
-			setLow(LED_BLUE_PORT, LED_BLUE_PIN);*/
-
 			// send telemetry if it is time and if solar voltage is good
 			if(!telemetry_timer_min) {
 				if(read_solar_volt() >= LOWEST_SOLVOLT_GOOD) {
@@ -577,34 +589,26 @@ int main(void)
 				else {
 					//set_rtc_speed(1); // 8-sec RTC
 				}
-				
+
 				telemetry_timer_min = TELEMETRY_MINUTES; // reload for next time
 			}
-			
+
 			// time to put radio to sleep, if radio not sleeping already?
 			if(!tmr_radio_sleeper && !radio_sleeping) {
 				nrf24l01_ce_low(); // stop radio listening
 				radio_sleeping = 1;
 
-/*setLow(LED_RED_PORT, LED_RED_PIN);
-setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
-delay_builtin_ms_(200);*/
-				
 				tmr_radio_wakeuper = radio_wakeuper_sec; // reload the timer for radio wakeup
 			}
-			
+
 			// time to turn the radio ON, if radio is sleeping?
 			if(!tmr_radio_wakeuper && radio_sleeping) {
 				nrf24l01_ce_high(); // re-start radio listening
 				radio_sleeping = 0;
 
-/*setHigh(LED_RED_PORT, LED_RED_PIN);
-setLow(LED_BLUE_PORT, LED_BLUE_PIN);
-delay_builtin_ms_(200);*/
-
 				// set the sleeper to listen for "radio_listening_sec" and then go to sleep
 				tmr_radio_sleeper = radio_listen_short_sec; // use short timer, this one is for expecting some RF command
-			}			
+			}
 
 			rtc_event = 0; // handled
 		}
@@ -794,7 +798,7 @@ ISR(TIMER0_OVF_vect, ISR_NOBLOCK)
 				}
 
 				police_lights_stage = !police_lights_stage; // change it
-				police_lights_stage_counter = POLICE_LIGHTS_STAGE_COUNT*2; // reload counter
+				police_lights_stage_counter = police_lights_stage_count * 2; // reload counter
 			}
 
 			// toggle the pin according to the current stage, if there is more to do
@@ -808,7 +812,7 @@ ISR(TIMER0_OVF_vect, ISR_NOBLOCK)
 					togglePin(LED_BLUE_PORT, LED_BLUE_PIN); // blink this one
 				}
 
-				police_lights_stage_on_timer = POLICE_LIGHTS_STAGE_ON_8MS; // reload timer
+				police_lights_stage_on_timer = police_lights_stage_on_8ms; // reload timer
 			}
 			// this was the last pass? - turn them off finally
 			else {

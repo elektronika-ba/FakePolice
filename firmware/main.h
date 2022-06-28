@@ -39,14 +39,16 @@
 #define EEPROM_RADIO_WAKEUPER		(EEPROM_TX_COUNTER + 2)				// 1 byte, radio checker timer
 #define EEPROM_RADIO_LISTEN_LONG	(EEPROM_RADIO_WAKEUPER + 1)			// 2 bytes, long timer before putting radio back to sleep (used for RF RX activity)
 #define EEPROM_RADIO_LISTEN_SHORT	(EEPROM_RADIO_LISTEN_LONG + 2)		// 1 byte, short timer before putting radio back to sleep (used when no RF RX activity)
+#define EEPROM_POLICE_L_STAGE_CNT	(EEPROM_RADIO_LISTEN_SHORT + 1)		// 1 byte, number of times to blink one color
+#define EEPROM_POLICE_L_STAGE_8MS	(EEPROM_POLICE_L_STAGE_CNT + 1)		// 1 byte, leds ON/OFF time
 
 #define	DEFAULT_RF_CHANNEL			14		// this is system's default RF channel
 
 #define TELEMETRY_MINUTES			30		// on every X minutes send telemetry data to "home"
 #define LOWEST_SOLVOLT_GOOD			3000	// mV required at solar panel in order to send the timed-telemetry on every TELEMETRY_MINUTES
 
-#define POLICE_LIGHTS_STAGE_COUNT	4		// keep then event! how many times should one color blink before switching to other color
-#define POLICE_LIGHTS_STAGE_ON_8MS	5		// delay&on-time between blinks/toggles of the LED ... in 8ms steps!!!
+#define DEFAULT_POLICE_LIGHTS_STAGE_COUNT	4		// keep this value even! how many times should one color blink before switching to other color
+#define DEFAULT_POLICE_LIGHTS_STAGE_ON_8MS	5		// delay&on-time between blinks/toggles of the LED ... in 8ms steps!!!
 
 #define DEFAULT_RADIO_WAKEUPER_SEC			4		// radio waking up every this many seconds
 #define DEFAULT_RADIO_LISTEN_SHORT_SEC		1		// listening for this many seconds
@@ -62,6 +64,7 @@
 #define RF_CMD_TELEDATA				0x7806	// telemetry data packet (we send this)
 #define RF_CMD_NEWKEY				0x4706	// keeloq key change
 #define RF_CMD_SETRADIOTMRS			0x3366	// set long & short inactivity sleep intervals, and wakeuper interval
+#define RF_CMD_CONFIGPOLICE			0x6A3C	// configuring the police light blinker
 
 // ADC pins
 
