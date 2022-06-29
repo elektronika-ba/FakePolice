@@ -64,12 +64,18 @@ while True:
     
     print(binascii.hexlify(rf_packet))
 
-    if radio.write(rf_packet):
-        print("TX RequestTelemetry OK ("+str(tx_counter)+")...")
-        tx_counter = tx_counter + 1
-    else:
-        print("TX RequestTelemetry ERR!!!")
-    
+    # prvo probudi uredjaj   
+    while True:
+        if radio.write(rf_packet):
+            print("TX RequestTelemetry OK ("+str(tx_counter)+")...")
+            tx_counter = tx_counter + 1
+            break
+        else:
+            print("TX RequestTelemetry ERR!!! Retry in 1s")
+            radio.startListening()
+            sleep(1)
+            radio.stopListening()
+
     radio.startListening()    
     
     sleep(1)

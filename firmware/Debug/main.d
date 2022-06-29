@@ -22,6 +22,7 @@ main.d main.o: .././main.c \
  d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\util\delay_basic.h \
  d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\avr\power.h \
  d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\avr\sleep.h \
+ d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\avr\wdt.h \
  .././main.h ../library_config/../lib/uart/uart.h \
  ../library_config/../lib/spi/spi.h \
  ../library_config/../lib/nrf24l01/nrf24l01.h \
@@ -72,6 +73,8 @@ d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\ut
 d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\avr\power.h:
 
 d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\avr\sleep.h:
+
+d:\programdata\atmel\studio\7.0\toolchain\avr8\avr8-gnu-toolchain\avr\include\avr\wdt.h:
 
 .././main.h:
 

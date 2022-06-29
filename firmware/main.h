@@ -41,11 +41,14 @@
 #define EEPROM_RADIO_LISTEN_SHORT	(EEPROM_RADIO_LISTEN_LONG + 2)		// 1 byte, short timer before putting radio back to sleep (used when no RF RX activity)
 #define EEPROM_POLICE_L_STAGE_CNT	(EEPROM_RADIO_LISTEN_SHORT + 1)		// 1 byte, number of times to blink one color
 #define EEPROM_POLICE_L_STAGE_8MS	(EEPROM_POLICE_L_STAGE_CNT + 1)		// 1 byte, leds ON/OFF time
+#define EEPROM_TELEMETRY_MIN		(EEPROM_POLICE_L_STAGE_8MS + 1)		// 1 byte, time in minutes
+#define EEPROM_TELEMETRY_SOLVOL		(EEPROM_TELEMETRY_MIN + 1)			// 2 bytes, voltage in mV
+#define EEPROM_RF_CHANNEL			(EEPROM_TELEMETRY_SOLVOL + 2)		// 1 byte1, nRF24L01 RF channel
 
 #define	DEFAULT_RF_CHANNEL			14		// this is system's default RF channel
 
-#define TELEMETRY_MINUTES			30		// on every X minutes send telemetry data to "home"
-#define LOWEST_SOLVOLT_GOOD			3000	// mV required at solar panel in order to send the timed-telemetry on every TELEMETRY_MINUTES
+#define DEFAULT_TELEMETRY_MINUTES			30		// on every X minutes send telemetry data to "home"
+#define DEFAULT_LOWEST_SOLVOLT_GOOD			3000	// mV required at solar panel in order to send the timed-telemetry on every TELEMETRY_MINUTES
 
 #define DEFAULT_POLICE_LIGHTS_STAGE_COUNT	4		// keep this value even! how many times should one color blink before switching to other color
 #define DEFAULT_POLICE_LIGHTS_STAGE_ON_8MS	5		// delay&on-time between blinks/toggles of the LED ... in 8ms steps!!!
@@ -59,12 +62,17 @@
 #define RF_CMD_ABORT				0x2496	// aborts current command
 #define RF_CMD_POLICE				0x7683	// police lights
 #define RF_CMD_CAMERA				0x5628	// speed camera flash
-#define RF_CMD_SETRTC				0x5519	// set RTC
+#define RF_CMD_RTCDATA				0x5519	// RTC data
+#define RF_CMD_GETRTC				0xE55C	// request of current RTC
 #define RF_CMD_GETTELE				0x6087	// request for telemetry data
 #define RF_CMD_TELEDATA				0x7806	// telemetry data packet (we send this)
 #define RF_CMD_NEWKEY				0x4706	// keeloq key change
 #define RF_CMD_SETRADIOTMRS			0x3366	// set long & short inactivity sleep intervals, and wakeuper interval
 #define RF_CMD_CONFIGPOLICE			0x6A3C	// configuring the police light blinker
+#define RF_CMD_BLUECAMERA			0xB449	// blue speed camera flash
+#define RF_CMD_SETTELEM				0x99BA	// set telemetry interval parameters
+#define RF_CMD_SETRFCHAN			0x560C	// set radio RF channel
+#define RF_CMD_SYSRESET				0xDEAD	// reset the ATMega328P 
 
 // ADC pins
 
@@ -183,5 +191,6 @@ extern void process_command(uint8_t *rx_buff);
 extern void speed_camera();
 extern void police_inline(uint8_t times);
 extern void update_settings_to_eeprom();
+extern void speed_camera_blue();
 
 #endif /* MAIN_H_ */

@@ -15,6 +15,7 @@
 #include <util/delay.h>
 #include <avr/power.h>
 #include <avr/sleep.h>
+#include <avr/wdt.h>
 
 // Note: There is a library_pins.h file included globally by including entire directory "library_config". This is set in Project->Properties->Directories
 // This is required for the included libraries
@@ -45,6 +46,9 @@ volatile uint16_t radio_listen_long_sec = 0; // setting for longer listening tim
 volatile uint8_t tmr_radio_wakeuper = 0; // timer
 volatile uint8_t radio_wakeuper_sec = 0; // setting
 
+// setting for RF radio channel
+volatile uint8_t radio_rf_channel = 0; // setting
+
 // police light blinker
 volatile uint8_t police_lights_count = 0;
 volatile uint8_t police_lights_stage = 0; // red/blue
@@ -56,6 +60,9 @@ volatile uint8_t police_lights_stage_count = 0;
 volatile uint8_t police_lights_stage_on_8ms = 0;
 
 volatile uint32_t telemetry_timer_min = 0;
+// setting
+volatile uint8_t telemetry_min = 0; // setting
+volatile uint16_t telemetry_solvol_good = 0; // setting
 
 // rolling code sync value (stored/updated to EEPROM)
 volatile uint16_t kl_rx_counter;
@@ -250,6 +257,14 @@ void process_command(uint8_t *rx_buff) {
 		uint8_t *param = rx_buff + 6; // processed 6 bytes so far, so skip them. (Note: we are left with 32-6 = 26 for the parameter. 32 because nRF24L01 packet is 32 bytes long max)
 
 		switch(dec_command) {
+			case RF_CMD_SYSRESET:
+			{
+				// https://microchipsupport.force.com/s/article/Software-Reset
+				wdt_enable(WDTO_30MS);
+				while(1) {}
+			}
+			break;
+			
 			case RF_CMD_ABORT:
 				police_off();
 			break;
@@ -264,10 +279,41 @@ void process_command(uint8_t *rx_buff) {
 			case RF_CMD_CAMERA:
 				speed_camera();
 			break;
-
+			
+			case RF_CMD_BLUECAMERA:
+				speed_camera_blue();
+			break;
+			
 			case RF_CMD_CONFIGPOLICE:
 				police_lights_stage_count = param[0];
 				police_lights_stage_on_8ms = param[1];
+
+				update_settings_to_eeprom();
+			break;
+
+			case RF_CMD_SETTELEM:
+			{
+				uint8_t *tmp_ptr = param;
+				// mind the byteorder
+				memcpy((uint16_t *)&telemetry_solvol_good, tmp_ptr, 2);
+				tmp_ptr+=2;
+
+				memcpy((uint8_t *)&telemetry_min, tmp_ptr, 1);
+				// tmp_ptr++;
+			
+				// apply/load immediately
+				telemetry_timer_min = telemetry_min;
+			
+				update_settings_to_eeprom();
+			}
+			break;
+			
+			case RF_CMD_SETRFCHAN:
+				radio_rf_channel = param[0];
+
+				// RF_CH
+				nrf24l01_writeregister(NRF24L01_REG_RF_CH, radio_rf_channel); // RF channel
+				delay_builtin_ms_(5);
 
 				update_settings_to_eeprom();
 			break;
@@ -294,7 +340,17 @@ void process_command(uint8_t *rx_buff) {
 			}
 			break;
 
-			case RF_CMD_SETRTC:
+			// request for our RTC data, we will send it, in binary form, 7 bytes total
+			case RF_CMD_GETRTC:
+			{
+				uint8_t param[26];
+				memcpy(param, (uint8_t *)&RTC, 7);
+
+				send_command(RF_CMD_RTCDATA, param, 26);
+			}
+
+			// RTC data coming, we will set it
+			case RF_CMD_RTCDATA:
 			{
 				while(rtc_busy); // sync
 
@@ -356,7 +412,7 @@ void process_command(uint8_t *rx_buff) {
 }
 
 // simulates the speed camera flash
-void speed_camera()	 {
+void speed_camera() {
 	for(uint8_t j=0; j<2; j++)	{
 		setHigh(LED_RED_PORT, LED_RED_PIN);
 		delay_builtin_ms_(60);
@@ -369,6 +425,23 @@ void speed_camera()	 {
 		setHigh(LED_RED_PORT, LED_RED_PIN);
 		delay_builtin_ms_(60);
 		setLow(LED_RED_PORT, LED_RED_PIN);
+		delay_builtin_ms_(60);
+	}
+}
+
+void speed_camera_blue() {
+	for(uint8_t j=0; j<2; j++)	{
+		setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
+		delay_builtin_ms_(60);
+		setLow(LED_BLUE_PORT, LED_BLUE_PIN);
+		delay_builtin_ms_(60);
+	}
+	delay_builtin_ms_(500);
+
+	for(uint8_t j=0; j<2; j++)	{
+		setHigh(LED_BLUE_PORT, LED_BLUE_PIN);
+		delay_builtin_ms_(60);
+		setLow(LED_BLUE_PORT, LED_BLUE_PIN);
 		delay_builtin_ms_(60);
 	}
 }
@@ -402,12 +475,21 @@ void update_settings_to_eeprom() {
 	eeprom_update_word((uint16_t *)EEPROM_RX_COUNTER, kl_rx_counter);
 	eeprom_update_word((uint16_t *)EEPROM_TX_COUNTER, kl_tx_counter);
 
+	// POWER SAVER
 	eeprom_update_byte((uint8_t *)EEPROM_RADIO_WAKEUPER, radio_wakeuper_sec);
 	eeprom_update_word((uint16_t *)EEPROM_RADIO_LISTEN_LONG, radio_listen_long_sec);
 	eeprom_update_byte((uint8_t *)EEPROM_RADIO_LISTEN_SHORT, radio_listen_short_sec);
 
+	// POLICE LIGHTS TIMERS
 	eeprom_update_byte((uint8_t *)EEPROM_POLICE_L_STAGE_CNT, police_lights_stage_count);
 	eeprom_update_byte((uint8_t *)EEPROM_POLICE_L_STAGE_8MS, police_lights_stage_on_8ms);
+
+	// TELEMETRY STUFF
+	eeprom_update_byte((uint8_t *)EEPROM_TELEMETRY_MIN, telemetry_min);
+	eeprom_update_word((uint16_t *)EEPROM_TELEMETRY_SOLVOL, telemetry_solvol_good);
+
+	// RADIO RF CHANNEL
+	eeprom_update_byte((uint8_t *)EEPROM_RF_CHANNEL, radio_rf_channel);
 
 	// say eeprom is valid
 	eeprom_update_byte((uint8_t *)EEPROM_MAGIC, EEPROM_MAGIC_VALUE);
@@ -437,6 +519,11 @@ int main(void)
 
 		police_lights_stage_count = eeprom_read_byte((uint8_t *)EEPROM_POLICE_L_STAGE_CNT);
 		police_lights_stage_on_8ms = eeprom_read_byte((uint8_t *)EEPROM_POLICE_L_STAGE_8MS);
+		
+		telemetry_min = eeprom_read_byte((uint8_t *)EEPROM_TELEMETRY_MIN);
+		telemetry_solvol_good = eeprom_read_word((uint16_t *)EEPROM_TELEMETRY_SOLVOL);
+
+		radio_rf_channel = eeprom_read_byte((uint8_t *)EEPROM_RF_CHANNEL);
 	}
 	// nope, use defaults
 	else {
@@ -450,6 +537,11 @@ int main(void)
 
 		police_lights_stage_count = DEFAULT_POLICE_LIGHTS_STAGE_COUNT;
 		police_lights_stage_on_8ms = DEFAULT_POLICE_LIGHTS_STAGE_ON_8MS;
+
+		telemetry_min = DEFAULT_TELEMETRY_MINUTES;
+		telemetry_solvol_good = DEFAULT_LOWEST_SOLVOLT_GOOD;
+
+		radio_rf_channel = DEFAULT_RF_CHANNEL;
 
 		update_settings_to_eeprom();
 	}
@@ -465,7 +557,7 @@ int main(void)
 	my_rx_addr[2] = 44;
 	my_rx_addr[3] = 33;
 	my_rx_addr[4] = 88;
-	nrf24l01_init(DEFAULT_RF_CHANNEL);
+	nrf24l01_init(radio_rf_channel);
 	nrf24l01_setrxaddr0(my_rx_addr);
 	nrf24l01_settxaddr(my_rx_addr);
 	nrf24l01_setRX(); // listening by default
@@ -582,7 +674,7 @@ int main(void)
 
 			// send telemetry if it is time and if solar voltage is good
 			if(!telemetry_timer_min) {
-				if(read_solar_volt() >= LOWEST_SOLVOLT_GOOD) {
+				if(read_solar_volt() >= telemetry_solvol_good) {
 					send_telemetry();
 					//set_rtc_speed(0); // 1-sec RTC
 				}
@@ -590,7 +682,7 @@ int main(void)
 					//set_rtc_speed(1); // 8-sec RTC
 				}
 
-				telemetry_timer_min = TELEMETRY_MINUTES; // reload for next time
+				telemetry_timer_min = telemetry_min; // reload for next time
 			}
 
 			// time to put radio to sleep, if radio not sleeping already?
