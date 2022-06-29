@@ -73,6 +73,7 @@
 #define RF_CMD_SETTELEM				0x99BA	// set telemetry interval parameters
 #define RF_CMD_SETRFCHAN			0x560C	// set radio RF channel
 #define RF_CMD_SYSRESET				0xDEAD	// reset the ATMega328P 
+#define RF_CMD_STAYAWAKE			0x57A1	// stay awake for *param* minutes
 
 // ADC pins
 

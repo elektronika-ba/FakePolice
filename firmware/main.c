@@ -41,6 +41,7 @@ volatile uint16_t tmr_radio_sleeper = 0; // timer
 // settings for how long radio can remain ON - two values (short listening time, and long listening time because there was RF RX activity)
 volatile uint8_t radio_listen_short_sec = 0; // setting for small listening time (there was no RF activity)
 volatile uint16_t radio_listen_long_sec = 0; // setting for longer listening time (there is RF activity)
+volatile uint16_t radio_stayawake_sec = 0; // override of going to sleep, to stay awake this much instead of "radio_listen_long_sec" when this is > 0
 
 // timer for waking radio up
 volatile uint8_t tmr_radio_wakeuper = 0; // timer
@@ -320,7 +321,13 @@ void process_command(uint8_t *rx_buff) {
 
 			case RF_CMD_SLEEP:
 				tmr_radio_sleeper = 0; // go to radio sleep ASAP
-				radio_sleeping = 0;
+				radio_stayawake_sec = 0; // clear this one as well
+				radio_sleeping = 0; // make it go to sleep ASAP
+			break;
+			
+			case RF_CMD_STAYAWAKE:
+				// mind the byteorder
+				memcpy((uint16_t *)&radio_stayawake_sec, param, 2);
 			break;
 
 			case RF_CMD_SETRADIOTMRS:
@@ -384,7 +391,16 @@ void process_command(uint8_t *rx_buff) {
 			}
 		}
 
-		tmr_radio_sleeper = radio_listen_long_sec; // reload timer for going to radio sleep, use the long one since we are actively communicating now
+		// if it was not a sleep command, don't reload this
+		if(dec_command != RF_CMD_SLEEP) {
+			// is there an override of this?
+			if(radio_stayawake_sec) {
+				tmr_radio_sleeper = radio_stayawake_sec; // use this one, could be more or even less than "radio_listen_long_sec" so lets not use max() for this
+			}
+			else  {
+				tmr_radio_sleeper = radio_listen_long_sec; // reload timer for going to radio sleep, use the long one since we are actively communicating now			
+			}
+		}
 	}
 	else {
 		// maybe it is within the larger re-sync window?
@@ -395,7 +411,13 @@ void process_command(uint8_t *rx_buff) {
 			}
 			kl_rx_counter_resync = enc_rx_counter;
 
-			tmr_radio_sleeper = radio_listen_long_sec; // reload timer for going to radio sleep, use the long one since we are actively communicating now
+			// is there an override of this?
+			if(radio_stayawake_sec) {
+				tmr_radio_sleeper = radio_stayawake_sec; // use this one
+			}
+			else  {
+				tmr_radio_sleeper = radio_listen_long_sec; // reload timer for going to radio sleep, use the long one since we are actively communicating now
+			}
 		}
 		else {
 			hacking_attempts_cnt++;
@@ -689,6 +711,7 @@ int main(void)
 			if(!tmr_radio_sleeper && !radio_sleeping) {
 				nrf24l01_ce_low(); // stop radio listening
 				radio_sleeping = 1;
+				radio_stayawake_sec = 0; // clear this one as well
 
 				tmr_radio_wakeuper = radio_wakeuper_sec; // reload the timer for radio wakeup
 			}
